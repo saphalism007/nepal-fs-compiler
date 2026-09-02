@@ -84,8 +84,14 @@ const SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png",
   "./apple-touch-icon.png", "./favicon-32.png"];
 
+/* Precache file by file. addAll() is atomic, so a single slow or momentarily
+   unavailable asset would throw away the whole offline shell. */
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => Promise.allSettled(SHELL.map(u => c.add(new Request(u, {cache: "reload"})))))
+      .then(() => self.skipWaiting())
+  );
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys()
