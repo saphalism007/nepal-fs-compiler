@@ -359,6 +359,8 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
         <textarea class="paste" id="tbPaste" placeholder="1001&#9;Cash in hand&#9;125000&#9;0&#9;98000&#9;0&#10;1002&#9;Nabil Bank – CA 0123&#9;2450000&#9;0&#9;1980000&#9;0&#10;2001&#9;Share capital&#9;0&#9;5000000&#9;0&#9;5000000"></textarea>
         <div class="btnrow" style="margin-top:10px">
           <button class="btn pri" id="btnParse">Import pasted rows</button>
+          <button class="btn pri" id="btnXlsxIn">Import from Excel file</button>
+          <input type="file" id="fileXlsx" accept=".xlsx,.xlsm,.xltx" hidden>
           <button class="btn" id="btnCsv">Upload CSV / TSV</button>
           <input type="file" id="fileCsv" accept=".csv,.tsv,.txt" hidden>
           <button class="btn" id="btnDemo">Load worked example</button>
@@ -410,6 +412,16 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
       <div id="fsBody"></div>
     </section>
 
+    <!-- ============ AUDIT CHECKS ============ -->
+    <section class="pane" id="pane-audit">
+      <div class="pane-head">
+        <h2>Audit checks</h2>
+        <p>Materiality, analytical review, exception reports and Nepal-specific compliance tests, run over the mapped trial balance and the schedules. Everything here is evidence to follow up, not an opinion.</p>
+      </div>
+      <div class="subtabs" id="audTabs"></div>
+      <div id="audBody"></div>
+    </section>
+
     <!-- ============ EXPORT ============ -->
     <section class="pane" id="pane-exp">
       <div class="pane-head">
@@ -444,6 +456,34 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
       <span class="hint" id="fwHint" style="margin-right:auto"></span>
       <button class="btn" id="fwCancel">Cancel</button>
       <button class="btn pri" id="fwOk" disabled>Use this framework</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal" id="impModal" hidden>
+  <div class="modal-box" style="max-width:1080px">
+    <div class="modal-hd">
+      <h2>Import trial balance from Excel</h2>
+      <p id="impSub">Pick the sheet, tell me which row holds the headings, and confirm what each column means.</p>
+    </div>
+    <div style="padding:18px 26px 8px">
+      <div class="grid-f" style="margin-bottom:14px">
+        <label class="f">Worksheet<select id="impSheet"></select></label>
+        <label class="f">Heading row — 0 if none<input id="impHdr" type="number" min="0" value="1"></label>
+        <label class="f">First data row<input id="impFirst" type="number" min="1" value="2"></label>
+        <label class="f">Existing ledgers<select id="impMode">
+          <option value="replace">Replace everything</option>
+          <option value="append">Add to what is there</option></select></label>
+      </div>
+      <div id="impWarn" class="hint warn" style="margin-bottom:10px"></div>
+      <div class="gwrap" style="max-height:46vh"><table class="g" id="impGrid"></table></div>
+      <p class="hint" style="margin-top:10px">Assign a role to each column using the dropdowns in the top row. A trial balance needs a <strong>Ledger name</strong> plus either <strong>Debit</strong> and <strong>Credit</strong>, or a single signed <strong>Balance</strong> column.</p>
+    </div>
+    <div class="modal-ft">
+      <span class="hint" id="impStatus" style="margin-right:auto"></span>
+      <button class="btn" id="impCancel">Cancel</button>
+      <button class="btn pri" id="impOk">Import ledgers</button>
     </div>
   </div>
 </div>
@@ -938,6 +978,7 @@ const STEPS = [
   {id:"sch",   label:"Schedules"},
   {id:"tax",   label:"Income tax"},
   {id:"fs",    label:"Financial statements"},
+  {id:"audit", label:"Audit checks"},
   {id:"exp",   label:"Export"}
 ];
 let curStep = "setup";
@@ -954,6 +995,7 @@ function nav(id){
   if(id==="sch") renderSch();
   if(id==="tax") renderTax();
   if(id==="fs") renderFs();
+  if(id==="audit") renderAud();
   if(id==="exp") renderExp();
   markSteps();
   window.scrollTo(0,0);
@@ -2742,12 +2784,55 @@ function buildSheets(){
   }
   out.push(ls);
 
-  /* review checklist */
-  const ck = new Sheet("Review Checks",[10,62,26]);
-  hdrBlock(ck,"Preparation and review checks", periodText("at"), 3, " ");
-  ck.r([cS("Result",ST.hdrL),cS("Check",ST.hdrL),cS("Detail",ST.hdrL)]); ck.freeze=ck.rows.length;
+  /* ---- audit file ---- */
+  const mat = materiality();
+  const ck = new Sheet("Audit Summary",[10,60,30]);
+  hdrBlock(ck,"Audit checks — summary", periodText("at"), 3, " ");
+  const sm = auditSummary();
+  ck.r([cS("Tie-out checks passed",ST.lblB), cS(sm.tieouts.pass+" of "+sm.tieouts.total,ST.lbl)]);
+  ck.r([cS("Compliance checks passed",ST.lblB), cS(sm.compliance.pass+" of "+sm.compliance.total,ST.lbl)]);
+  ck.r([cS("Exceptions to follow up",ST.lblB), cS(String(sm.exceptions.high),ST.lbl)]);
+  ck.r([cS("Exceptions to review",ST.lblB), cS(String(sm.exceptions.medium),ST.lbl)]);
+  ck.blank();
+  ck.r([cS("Overall materiality",ST.lblB), cN(av(mat.om),ST.numB), cS(mat.pct+"% of "+mat.basisLabel.toLowerCase(),ST.muted)]);
+  ck.r([cS("Performance materiality",ST.lblB), cN(av(mat.pm),ST.numB), cS(S.audit.pm+"% of overall",ST.muted)]);
+  ck.r([cS("Clearly trivial threshold",ST.lblB), cN(av(mat.ct),ST.numB), cS(S.audit.ct+"% of overall",ST.muted)]);
+  ck.blank();
+  ck.r([cS("Result",ST.hdrL),cS("Tie-out check",ST.hdrL),cS("Detail",ST.hdrL)]);
   m.checks.forEach(c=> ck.r([cS(c.ok?"PASS":"REVIEW", c.ok?ST.lbl:ST.lblB), cS(c.label,ST.lbl), cS(c.detail,ST.muted)]));
+  ck.blank();
+  ck.r([cS("Result",ST.hdrL),cS("Nepal statutory check",ST.hdrL),cS("Detail",ST.hdrL)]);
+  complianceChecks().forEach(c=> ck.r([cS(c.ok?"PASS":"CHECK", c.ok?ST.lbl:ST.lblB),
+    cS(c.label+(c.ref?"  ["+c.ref+"]":""),ST.lbl), cS(c.detail,ST.muted)]));
   out.push(ck);
+
+  const an = new Sheet("Analytical Review",[34,16,16,16,15,40]);
+  an.landscape = true;
+  hdrBlock(an,"Analytical review", periodText("for"), 6, "Amounts in "+(S.meta.ccy||"NPR"));
+  an.r([cS("Ratio",ST.hdrL),cS(S.meta.cyLabel||"Current",ST.hdrR),cS(S.meta.pyLabel||"Prior",ST.hdrR),
+        cS("Change",ST.hdrR),cS("Unit",ST.hdrL),cS("Comment",ST.hdrL)]);
+  an.freeze = an.rows.length;
+  ratioSet().forEach(r=>{ const ch=(r.cy!==null&&r.py!==null)?r2(r.cy-r.py):null;
+    an.r([cS(r.name,ST.lbl), cN(r.cy,ST.num), cN(r.py,ST.num), cN(ch,ST.num),
+          cS(r.fmt==="%"?"percent":r.fmt==="d"?"days":"times",ST.muted), cS(r.note||"",ST.muted)]); });
+  an.blank(2);
+  an.r([cS("Year on year movement by statement line",ST.lblB)]);
+  an.r([cS("Line",ST.hdrL),cS(S.meta.cyLabel||"Current",ST.hdrR),cS(S.meta.pyLabel||"Prior",ST.hdrR),
+        cS("Change",ST.hdrR),cS("% change",ST.hdrR),cS("Flag",ST.hdrL)]);
+  varianceReport().forEach(v=> an.r([cS(v.label,ST.lbl), cN(av(v.cy),ST.num), cN(av(v.py),ST.num),
+    cN(av(v.chg), v.flag?ST.numB:ST.num), cN(v.pct===null?null:v.pct, ST.num),
+    cS(v.flag?"Above performance materiality":v.newLine?"New this year":v.gone?"Cleared":"",ST.muted)]));
+  out.push(an);
+
+  const ex = new Sheet("Exceptions",[14,24,38,64]);
+  ex.landscape = true;
+  hdrBlock(ex,"Exception report", periodText("at"), 4, " ");
+  ex.r([cS("Priority",ST.hdrL),cS("Type",ST.hdrL),cS("Item",ST.hdrL),cS("Detail",ST.hdrL)]);
+  ex.freeze = ex.rows.length;
+  const WORD={high:"Follow up", medium:"Review", low:"Note", info:"Scoping"};
+  exceptionReport().forEach(e=> ex.r([cS(WORD[e.sev],e.sev==="high"?ST.lblB:ST.lbl),
+    cS(e.type,ST.lbl), cS(e.item,ST.lbl), cS(e.detail,ST.muted)]));
+  out.push(ex);
   return out;
 }
 async function exportXlsx(){
@@ -2779,6 +2864,631 @@ function renderExp(){
       <span class="chip ${c.ok?"ok":"bad"}" style="flex:none"><span class="dot"></span>${c.ok?"Pass":"Review"}</span>
       <span style="flex:1">${esc(c.label)}</span>
       <span class="hint" style="font-family:var(--mono);font-size:11.5px">${esc(c.detail)}</span></div>`).join("");
+}
+</script>
+
+<script>
+/* ---------- 24. READING .XLSX ----------
+   An xlsx is a zip of XML parts. We already write one; this reads one back,
+   using DecompressionStream for the inflate so there is still no library. */
+async function inflateRaw(u8){
+  if(typeof DecompressionStream === "undefined")
+    throw new Error("This browser cannot unzip Excel files. Save the sheet as CSV and use Upload CSV instead.");
+  const ds = new DecompressionStream("deflate-raw");
+  const w = ds.writable.getWriter(); w.write(u8); w.close();
+  const parts=[]; const rd = ds.readable.getReader();
+  for(;;){ const {done,value}=await rd.read(); if(done) break; parts.push(value); }
+  let n=0; parts.forEach(p=>n+=p.length);
+  const out=new Uint8Array(n); let o=0; parts.forEach(p=>{ out.set(p,o); o+=p.length; });
+  return out;
+}
+function unzip(buf){
+  const u8=new Uint8Array(buf), dv=new DataView(buf);
+  let eocd=-1;
+  for(let i=u8.length-22; i>=Math.max(0,u8.length-65557); i--)
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  if(eocd<0) throw new Error("That does not look like an Excel file.");
+  let count=dv.getUint16(eocd+10,true), cdOff=dv.getUint32(eocd+16,true);
+  if(count===0xFFFF || cdOff===0xFFFFFFFF){            /* zip64 */
+    for(let i=eocd-20;i>=0;i--) if(dv.getUint32(i,true)===0x07064b50){
+      const z=Number(dv.getBigUint64(i+8,true));
+      if(dv.getUint32(z,true)===0x06064b50){ count=Number(dv.getBigUint64(z+32,true)); cdOff=Number(dv.getBigUint64(z+48,true)); }
+      break; }
+  }
+  const dec=new TextDecoder(), files=new Map();
+  let off=cdOff;
+  for(let i=0;i<count && off+46<=u8.length;i++){
+    if(dv.getUint32(off,true)!==0x02014b50) break;
+    const method=dv.getUint16(off+10,true), compSize=dv.getUint32(off+20,true);
+    const nLen=dv.getUint16(off+28,true), eLen=dv.getUint16(off+30,true), cLen=dv.getUint16(off+32,true);
+    const lho=dv.getUint32(off+42,true);
+    const name=dec.decode(u8.subarray(off+46,off+46+nLen));
+    const lN=dv.getUint16(lho+26,true), lE=dv.getUint16(lho+28,true);
+    const start=lho+30+lN+lE;
+    files.set(name,{method, raw:u8.subarray(start, start+compSize)});
+    off += 46+nLen+eLen+cLen;
+  }
+  return files;
+}
+async function zipText(files,name){
+  const f=files.get(name); if(!f) return null;
+  const bytes = f.method===0 ? f.raw : await inflateRaw(f.raw);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+const XNS="*";
+function xText(node){ let s=""; for(const t of node.getElementsByTagNameNS(XNS,"t")) s+=t.textContent; return s; }
+function colIdx(ref){ let n=0; for(let i=0;i<ref.length;i++){ const c=ref.charCodeAt(i);
+  if(c>=65&&c<=90) n=n*26+(c-64); else if(c>=97&&c<=122) n=n*26+(c-96); else break; } return n-1; }
+function parseXml(x, what){
+  const d=new DOMParser().parseFromString(x,"application/xml");
+  if(d.getElementsByTagName("parsererror").length) throw new Error("Could not read "+what+" inside the file.");
+  return d;
+}
+async function readXlsx(buf){
+  const files=unzip(buf);
+  const wbXml=await zipText(files,"xl/workbook.xml");
+  if(!wbXml) throw new Error("That file has no workbook inside it — is it really an .xlsx?");
+  const relXml=await zipText(files,"xl/_rels/workbook.xml.rels")||"";
+  const rels={};
+  if(relXml) for(const r of parseXml(relXml,"the workbook links").getElementsByTagNameNS(XNS,"Relationship"))
+    rels[r.getAttribute("Id")] = r.getAttribute("Target").replace(/^\/?xl\//,"").replace(/^\//,"");
+  const ssXml=await zipText(files,"xl/sharedStrings.xml");
+  const shared=[];
+  if(ssXml) for(const si of parseXml(ssXml,"the shared text").getElementsByTagNameNS(XNS,"si")) shared.push(xText(si));
+  const out=[];
+  for(const sh of parseXml(wbXml,"the workbook").getElementsByTagNameNS(XNS,"sheet")){
+    const name=sh.getAttribute("name")||("Sheet"+(out.length+1));
+    let rid=null; for(const a of sh.attributes) if(a.name.endsWith(":id")||a.name==="id") rid=a.value;
+    let target=rels[rid];
+    if(!target) target="worksheets/sheet"+(out.length+1)+".xml";
+    const xml=await zipText(files,"xl/"+target);
+    if(!xml){ out.push({name, rows:[]}); continue; }
+    const doc=parseXml(xml,"worksheet "+name), rows=[];
+    let maxR=0;
+    for(const row of doc.getElementsByTagNameNS(XNS,"row")){
+      const rn=parseInt(row.getAttribute("r")||"0",10)||(maxR+1);
+      const cells=[];
+      for(const c of row.getElementsByTagNameNS(XNS,"c")){
+        const ci=colIdx(c.getAttribute("r")||""); if(ci<0) continue;
+        const t=c.getAttribute("t"); let v="";
+        if(t==="inlineStr"){ const is=c.getElementsByTagNameNS(XNS,"is")[0]; v=is?xText(is):""; }
+        else { const vn=c.getElementsByTagNameNS(XNS,"v")[0]; const raw=vn?vn.textContent:"";
+          if(t==="s") v = shared[parseInt(raw,10)] ?? "";
+          else if(t==="b") v = raw==="1"?"TRUE":"FALSE";
+          else if(t==="e") v = "";
+          else v = raw; }
+        cells[ci]=v;
+      }
+      rows[rn-1]=cells; maxR=Math.max(maxR,rn);
+    }
+    for(let i=0;i<maxR;i++) if(!rows[i]) rows[i]=[];
+    out.push({name, rows:rows.slice(0,maxR)});
+  }
+  return out;
+}
+
+/* ---------- 25. IMPORT MAPPING SCREEN ---------- */
+const ROLES=[["","— ignore —"],["code","Ledger code"],["name","Ledger name"],
+  ["dr","Debit — current year"],["cr","Credit — current year"],["bal","Balance — current (Dr +, Cr −)"],
+  ["pdr","Debit — prior year"],["pcr","Credit — prior year"],["pbal","Balance — prior (Dr +, Cr −)"]];
+let IMP={sheets:[], si:0, roles:[], hdr:0, first:1};
+function looksNumeric(v){ if(v===""||v==null) return false; return isFinite(num(v)) && /[\d]/.test(String(v)); }
+function guessRoles(rows, hdr){
+  const head=(rows[hdr]||[]).map(x=>String(x||"").toLowerCase().trim());
+  const width=Math.max(...rows.slice(0,60).map(r=>r.length), head.length);
+  const roles=new Array(width).fill("");
+  /* Which of two amount columns is the comparative? A Nepali fiscal label appears
+     on both ("FY 2082/83 Debit", "FY 2081/82 Debit"), so match the engagement's own
+     labels first, then fall back to the wording, then to the lower year number. */
+  const cyL=String(S.meta.cyLabel||"").toLowerCase().trim();
+  const pyL=String(S.meta.pyLabel||"").toLowerCase().trim();
+  const yearKey=h=>{ let m=h.match(/((?:19|20|21)\d{2})\s*[\/\-\u2013]\s*\d{2,4}/);
+    if(m) return +m[1];
+    m=h.match(/\b((?:19|20|21)\d{2})\b/); return m?+m[1]:null; };
+  const years=head.map(yearKey).filter(k=>k!==null);
+  const newest=years.length?Math.max(...years):null;
+  const priorWord=/prev|prior|last|comparat|\bpy\b/;
+  const priority=h=>{
+    if(pyL && h.includes(pyL)) return true;
+    if(cyL && h.includes(cyL)) return false;
+    if(priorWord.test(h)) return true;
+    const k=yearKey(h);
+    if(k!==null && newest!==null && k<newest) return true;
+    if(k!==null && newest!==null && k===newest) return false;
+    return null;                                   /* unknown - decide by order */
+  };
+  const kinds=head.map(h=>{
+    if(!h) return null;
+    if(/^(sn|s\.n|sl|sr|#)$/.test(h)) return null;
+    if(/code|a\/c|ac no|gl no|account no|ledger no/.test(h)) return {k:"code"};
+    if(/ledger|particular|account|description|head|narration|name/.test(h)) return {k:"name"};
+    if(/debit|\bdr\b/.test(h)) return {k:"dr", p:priority(h)};
+    if(/credit|\bcr\b/.test(h)) return {k:"cr", p:priority(h)};
+    if(/balance|closing|amount|total/.test(h)) return {k:"bal", p:priority(h)};
+    return null;
+  });
+  const used={dr:false, cr:false, bal:false};
+  kinds.forEach((info,i)=>{
+    if(!info) return;
+    if(info.k==="code"||info.k==="name"){ roles[i]=info.k; return; }
+    let prior = info.p;
+    if(prior===null){ prior = used[info.k]; }   /* second one of its kind is the comparative */
+    roles[i] = prior ? "p"+info.k : info.k;
+    if(!prior) used[info.k]=true;
+  });
+  if(!roles.includes("name")){                       /* no usable headings — infer from the data */
+    const body=rows.slice(hdr+1, hdr+40).filter(r=>r && r.length);
+    let bestText=-1, bestScore=-1;
+    for(let c=0;c<width;c++){
+      const vals=body.map(r=>r[c]).filter(v=>v!=null&&v!=="");
+      if(!vals.length) continue;
+      const textShare=vals.filter(v=>!looksNumeric(v)).length/vals.length;
+      const score=textShare*100 + vals.join("").length/vals.length;
+      if(textShare>0.6 && score>bestScore){ bestScore=score; bestText=c; }
+    }
+    if(bestText>=0){ roles[bestText]="name";
+      if(bestText>0){ const left=body.map(r=>r[bestText-1]).filter(v=>v!=null&&v!==""); 
+        if(left.length && left.every(v=>String(v).length<=14)) roles[bestText-1]="code"; }
+      const numCols=[]; for(let c=bestText+1;c<width;c++){
+        const vals=body.map(r=>r[c]).filter(v=>v!=null&&v!=="");
+        if(vals.length && vals.filter(looksNumeric).length/vals.length>0.7) numCols.push(c); }
+      const order=["dr","cr","pdr","pcr"];
+      if(numCols.length===1) roles[numCols[0]]="bal";
+      else numCols.slice(0,4).forEach((c,i)=>roles[c]=order[i]);
+    }
+  }
+  return roles;
+}
+/* Returns the index of the heading row, or -1 when the sheet has none and the
+   very first row is already data. Guessing a heading where there is none silently
+   drops a ledger, so a candidate row has to read like headings, not like a record. */
+function guessHeaderRow(rows){
+  const HEADWORD=/(ledger|particular|account|description|narration|head|name|code|debit|credit|balance|amount|\bdr\b|\bcr\b|\bsn\b)/;
+  const isHeadingRow=r=>{
+    const cells=(r||[]).filter(v=>v!=null&&v!=="");
+    if(cells.length<2) return false;
+    if(cells.filter(looksNumeric).length>1) return false;   /* two or more numbers: a record */
+    return HEADWORD.test(cells.map(x=>String(x).toLowerCase()).join(" "));
+  };
+  for(let i=0;i<Math.min(rows.length,30);i++){
+    const t=(rows[i]||[]).map(x=>String(x||"").toLowerCase()).join(" ");
+    if(/(ledger|particular|account|description|name)/.test(t) && /(debit|credit|balance|amount|\bdr\b|\bcr\b)/.test(t)) return i;
+  }
+  for(let i=0;i<Math.min(rows.length,30);i++) if(isHeadingRow(rows[i])) return i;
+  return -1;
+}
+function openImport(sheets){
+  IMP.sheets=sheets.filter(s=>s.rows.length);
+  if(!IMP.sheets.length){ toast("That workbook has no data in it.", true); return; }
+  let best=0, bestScore=-1;
+  IMP.sheets.forEach((sh,i)=>{
+    const txt=sh.rows.slice(0,40).map(r=>(r||[]).join(" ")).join(" ").toLowerCase();
+    let sc=sh.rows.length;
+    if(/trial balance/.test(txt)) sc+=5000;
+    if(/(debit|credit)/.test(txt)) sc+=2000;
+    if(/trial/i.test(sh.name)) sc+=3000;
+    if(sc>bestScore){ bestScore=sc; best=i; }
+  });
+  IMP.si=best;
+  $("impSheet").innerHTML=IMP.sheets.map((sh,i)=>
+    `<option value="${i}"${i===best?" selected":""}>${esc(sh.name)} — ${sh.rows.length} rows</option>`).join("");
+  selectImportSheet(best);
+  $("impModal").hidden=false;
+}
+function selectImportSheet(i){
+  IMP.si=i;
+  const rows=IMP.sheets[i].rows;
+  IMP.hdr=guessHeaderRow(rows);
+  IMP.first=IMP.hdr+1;
+  IMP.roles=guessRoles(rows,IMP.hdr);
+  $("impHdr").value=IMP.hdr+1; $("impFirst").value=IMP.first+1;
+  renderImport();
+}
+function renderImport(){
+  const rows=IMP.sheets[IMP.si].rows;
+  const width=Math.max(IMP.roles.length, ...rows.slice(0,80).map(r=>r.length), 1);
+  while(IMP.roles.length<width) IMP.roles.push("");
+  const opts=r=>ROLES.map(o=>`<option value="${o[0]}"${o[0]===r?" selected":""}>${esc(o[1])}</option>`).join("");
+  let h=`<thead><tr><th style="width:44px">Row</th>`+
+    Array.from({length:width},(_,c)=>`<th style="min-width:150px"><select data-role="${c}" style="width:100%;font-size:12px">${opts(IMP.roles[c])}</select></th>`).join("")+`</tr></thead><tbody>`;
+  const end=Math.min(rows.length, IMP.first+40);
+  for(let r=0;r<end;r++){
+    const isHdr=r===IMP.hdr, isSkip=r<IMP.first;
+    h+=`<tr style="${isHdr?"background:var(--green-wash);font-weight:600":isSkip?"opacity:.45":""}">`+
+      `<td style="padding:5px 8px;font-family:var(--mono);font-size:11px;color:var(--muted)">${r+1}</td>`+
+      Array.from({length:width},(_,c)=>{ const v=(rows[r]||[])[c];
+        return `<td style="padding:5px 8px;font-size:12px;${looksNumeric(v)?"text-align:right;font-family:var(--mono)":""}">${esc(v==null?"":String(v).slice(0,60))}</td>`;
+      }).join("")+`</tr>`;
+  }
+  $("impGrid").innerHTML=h+"</tbody>";
+  $("impGrid").querySelectorAll("select[data-role]").forEach(sel=>sel.onchange=()=>{
+    const c=+sel.dataset.role, v=sel.value;
+    if(v && v!=="code") IMP.roles.forEach((r,i)=>{ if(i!==c && r===v) IMP.roles[i]=""; });
+    IMP.roles[c]=v; renderImport();
+  });
+  const has=r=>IMP.roles.includes(r);
+  const problems=[];
+  if(!has("name")) problems.push("No column is marked as the Ledger name.");
+  if(!has("dr") && !has("cr") && !has("bal")) problems.push("No amount column — mark Debit and Credit, or a single Balance column.");
+  $("impWarn").textContent = problems.join("  ");
+  $("impWarn").style.display = problems.length?"":"none";
+  $("impOk").disabled = problems.length>0;
+  const n=Math.max(0, rows.length-IMP.first);
+  $("impStatus").textContent = problems.length?"Assign the missing columns to continue":
+    ("Ready — about "+n+" rows will be read"+(has("pdr")||has("pcr")||has("pbal")?", with comparatives":", current year only"));
+}
+function runImport(){
+  const rows=IMP.sheets[IMP.si].rows, R=IMP.roles;
+  const at=role=>R.indexOf(role);
+  const iCode=at("code"), iName=at("name"), iDr=at("dr"), iCr=at("cr"), iBal=at("bal"),
+        iPdr=at("pdr"), iPcr=at("pcr"), iPbal=at("pbal");
+  const out=[]; let skipped=0;
+  for(let r=IMP.first;r<rows.length;r++){
+    const row=rows[r]||[];
+    const name=String(row[iName]==null?"":row[iName]).trim();
+    if(!name){ skipped++; continue; }
+    if(/^(total|grand total|sub ?total|opening balance|closing balance)\b/i.test(name)){ skipped++; continue; }
+    let dr=iDr>=0?num(row[iDr]):0, cr=iCr>=0?num(row[iCr]):0;
+    if(iBal>=0){ const b=num(row[iBal]); if(b>=0) dr+=b; else cr+=-b; }
+    let pdr=iPdr>=0?num(row[iPdr]):0, pcr=iPcr>=0?num(row[iPcr]):0;
+    if(iPbal>=0){ const b=num(row[iPbal]); if(b>=0) pdr+=b; else pcr+=-b; }
+    if(dr<0){ cr+=-dr; dr=0; } if(cr<0){ dr+=-cr; cr=0; }
+    if(pdr<0){ pcr+=-pdr; pdr=0; } if(pcr<0){ pdr+=-pcr; pcr=0; }
+    if(!dr&&!cr&&!pdr&&!pcr){ skipped++; continue; }
+    out.push({id:uid(), code:iCode>=0?String(row[iCode]==null?"":row[iCode]).trim():"",
+      name, dr:r2(dr), cr:r2(cr), pdr:r2(pdr), pcr:r2(pcr), map:autoMapOne(name,S.fw)});
+  }
+  if(!out.length){ toast("No ledger rows were found — check the first data row.", true); return; }
+  S.tb = $("impMode").value==="append" ? S.tb.concat(out) : out;
+  $("impModal").hidden=true;
+  const t=tbTotals();
+  seedSchedules(); mapOptionsCache=""; renderTb(); refreshChrome(); persist();
+  toast(out.length+" ledgers imported from "+IMP.sheets[IMP.si].name+
+    (skipped?" ("+skipped+" blank or total rows skipped)":"")+". "+
+    (Math.abs(t.diff)<=num(S.meta.tol)?"Trial balance agrees.":"Out of balance by "+dispRaw(t.diff)+"."));
+}
+</script>
+
+<script>
+/* ---------- 26. AUDIT ENGINE ---------- */
+const MAT_BASES=[
+  {id:"pbt",  label:"Profit before tax",            pct:5,   range:"5–10%"},
+  {id:"rev",  label:"Revenue",                      pct:1,   range:"0.5–1%"},
+  {id:"ta",   label:"Total assets",                 pct:1,   range:"1–2%"},
+  {id:"eq",   label:"Total equity",                 pct:2,   range:"2–5%"},
+  {id:"exp",  label:"Total expenditure",            pct:1,   range:"0.5–1%"}
+];
+function auditCfg(){
+  S.audit = Object.assign({basis:"", pct:"", pm:75, ct:5, varPct:25}, S.audit||{});
+  return S.audit;
+}
+function materiality(){
+  const m=M(), a=auditCfg(), f=m.f;
+  const vals={ pbt:Math.abs(m.tot.pbtC), rev:Math.abs(m.tot.revC), ta:Math.abs(m.tot.assetsC),
+               eq:Math.abs(m.tot.eqTotC),
+               exp:Math.abs(r2(m.tot.revC + (m.cy.oi_other||0) - m.tot.pbtC)) };
+  let basis=a.basis;
+  if(!basis){                                   /* profit oriented entities anchor on PBT */
+    basis = (S.fw==="NPO") ? "exp" : (vals.pbt>0 ? "pbt" : "rev");
+    if(basis==="pbt" && vals.pbt < vals.rev*0.002) basis="rev";   /* break-even year */
+  }
+  const def=MAT_BASES.find(b=>b.id===basis)||MAT_BASES[0];
+  const pct = a.pct===""||a.pct===undefined ? def.pct : num(a.pct);
+  const om = r2(vals[basis]*pct/100);
+  const pm = r2(om*num(a.pm)/100);
+  const ct = r2(om*num(a.ct)/100);
+  return {basis, basisLabel:def.label, basisValue:vals[basis], pct, range:def.range, om, pm, ct, vals};
+}
+function ratioSet(){
+  const m=M(), cy=m.cy, py=m.py, t=m.tot;
+  const g=(id,p)=>Math.abs((p?py:cy)[id]||0);
+  const sum=(ids,p)=>ids.reduce((s,id)=>s+((p?py:cy)[id]||0),0);
+  const ca=(p)=>p?t.caP:t.caC, cl=(p)=>p?t.clP:t.clC;
+  const inv=p=>g("ca_inv",p), tr=p=>g("ca_tr",p)+g("ca_grant",p), tp=p=>g("cl_tp",p);
+  const rev=p=>p?t.revP:t.revC, cos=p=>Math.abs(sum(["cos_material","cos_purchase","cos_chg","cos_direct","cos_sub"],p));
+  const debt=p=>sum(["ncl_borrow","ncl_deb","cl_stborrow","cl_cpltd","cl_od","ncl_lease","cl_lease_c"],p);
+  const eq=p=>p?t.eqTotP:t.eqTotC, pbt=p=>p?t.pbtP:t.pbtC, pft=p=>p?t.pftP:t.pftC;
+  const fin=p=>Math.abs((p?py:cy)["fin_cost"]||0);
+  const d=(n,dn)=>dn?r2(n/dn):null;
+  const R=[];
+  const add=(name,fc,fp,fmt,note)=>R.push({name, cy:fc, py:fp, fmt:fmt||"x", note});
+  add("Gross profit margin", rev(0)?r2(t.gpC/rev(0)*100):null, rev(1)?r2(t.gpP/rev(1)*100):null, "%");
+  add("Operating margin", rev(0)?r2(t.opC/rev(0)*100):null, rev(1)?r2(t.opP/rev(1)*100):null, "%");
+  add("Net margin", rev(0)?r2(pft(0)/rev(0)*100):null, rev(1)?r2(pft(1)/rev(1)*100):null, "%");
+  add("Return on equity", eq(0)?r2(pft(0)/eq(0)*100):null, eq(1)?r2(pft(1)/eq(1)*100):null, "%");
+  add("Current ratio", d(ca(0),cl(0)), d(ca(1),cl(1)), "x", "Current assets over current liabilities");
+  add("Quick ratio", d(ca(0)-inv(0),cl(0)), d(ca(1)-inv(1),cl(1)), "x", "Excludes inventories");
+  add("Debt to equity", d(debt(0),eq(0)), d(debt(1),eq(1)), "x");
+  add("Interest cover", fin(0)?d(pbt(0)+fin(0),fin(0)):null, fin(1)?d(pbt(1)+fin(1),fin(1)):null, "x", "Profit before interest and tax over finance costs");
+  add("Receivable days", rev(0)?r2(tr(0)/rev(0)*365):null, rev(1)?r2(tr(1)/rev(1)*365):null, "d");
+  add("Inventory days", cos(0)?r2(inv(0)/cos(0)*365):null, cos(1)?r2(inv(1)/cos(1)*365):null, "d");
+  add("Payable days", cos(0)?r2(tp(0)/cos(0)*365):null, cos(1)?r2(tp(1)/cos(1)*365):null, "d");
+  return R.filter(r=>r.cy!==null||r.py!==null);
+}
+function varianceReport(){
+  const m=M(), mat=materiality(), a=auditCfg();
+  const rows=[];
+  for(const g of GRP_ORDER){
+    for(const c of catFor(S.fw)){
+      if(c.grp!==g) continue;
+      const cy=m.cy[c.id]||0, py=m.py[c.id]||0;
+      if(Math.abs(cy)<=EPS && Math.abs(py)<=EPS) continue;
+      const chg=r2(cy-py);
+      const pct = Math.abs(py)>EPS ? r2(chg/Math.abs(py)*100) : (Math.abs(cy)>EPS?null:0);
+      const bigAmt = Math.abs(chg) > mat.pm;
+      const bigPct = pct===null || Math.abs(pct) >= num(a.varPct);
+      rows.push({group:GRP_LABEL[g], id:c.id, label:c.label, cy, py, chg, pct,
+                 flag: bigAmt && bigPct, newLine: Math.abs(py)<=EPS && Math.abs(cy)>EPS,
+                 gone: Math.abs(cy)<=EPS && Math.abs(py)>EPS});
+    }
+  }
+  return rows;
+}
+function exceptionReport(){
+  const m=M(), mat=materiality(), out=[];
+  const add=(sev,type,item,detail)=>out.push({sev,type,item,detail});
+  /* 1. unmapped */
+  S.tb.filter(r=>!r.map && (num(r.dr)||num(r.cr)||num(r.pdr)||num(r.pcr)))
+      .forEach(r=>add("high","Unmapped ledger", (r.code?r.code+" ":"")+r.name,
+        "Excluded from the statements. Balance "+dispRaw(num(r.dr)-num(r.cr))));
+  /* 2. a statement line sitting on the wrong side */
+  for(const c of catFor(S.fw)){
+    const v=m.cy[c.id]||0;
+    if(Math.abs(v)<=EPS) continue;
+    if(v<0 && ["NCA","CA","EQ","NCL","CL","REV","OI","FININC"].includes(c.grp) &&
+       !["eq_re","eq_other_r","fund_unres","cos_chg","rev_disc"].includes(c.id))
+      add("high","Negative balance", c.label,
+        "Shows as "+dispRaw(v)+" — a "+(["NCA","CA"].includes(c.grp)?"negative asset":"negative "+(c.grp==="REV"||c.grp==="OI"?"income":"liability or reserve"))+". Check the mapping and the sign.");
+  }
+  /* 3. ledgers on the opposite side to their line (contras are legitimate) */
+  const CONTRA=/accumulated (depreciation|amortisation)|allowance|provision for doubtful|less:|written off|depreciation fund/i;
+  for(const r of S.tb){
+    if(!r.map) continue; const c=CATBY[r.map]; if(!c) continue;
+    const v=c.sign*(num(r.dr)-num(r.cr));
+    if(v<-EPS && !CONTRA.test(r.name) && ["NCA","CA","COS","OPEX","FIN","TAX","EQ","NCL","CL","REV","OI","FININC"].includes(c.grp))
+      add("medium","Ledger on the opposite side",(r.code?r.code+" ":"")+r.name,
+        "Sits on the "+(c.sign>0?"credit":"debit")+" side of "+c.label+" at "+dispRaw(Math.abs(v))+". A contra account is fine; otherwise check it.");
+  }
+  /* 4. duplicates */
+  const seen={}; S.tb.forEach(r=>{ const k=r.name.trim().toLowerCase(); if(!k) return; (seen[k]=seen[k]||[]).push(r); });
+  Object.values(seen).filter(g=>g.length>1).forEach(g=>
+    add("medium","Duplicate ledger name", g[0].name, g.length+" ledgers share this name — possible double count."));
+  /* 5. round sums, suggesting an estimate or a journal */
+  S.tb.forEach(r=>{ const v=Math.abs(num(r.dr)-num(r.cr));
+    if(v>=100000 && v%100000===0) add("low","Round sum balance",(r.code?r.code+" ":"")+r.name,
+      dispRaw(v)+" is an exact round figure — often a provision, estimate or manual journal."); });
+  /* 6. movement in the year above performance materiality */
+  varianceReport().filter(v=>v.flag).forEach(v=>
+    add("medium","Significant movement", v.label,
+      dispRaw(v.py)+" to "+dispRaw(v.cy)+" — a change of "+dispRaw(v.chg)+
+      (v.pct===null?"":" ("+fmtNum(v.pct,1,"intl")+"%)")+", above performance materiality."));
+  /* 7. dormant and new */
+  varianceReport().filter(v=>v.gone).forEach(v=>
+    add("low","Balance cleared", v.label, "Was "+dispRaw(v.py)+" last year and is nil now."));
+  varianceReport().filter(v=>v.newLine && Math.abs(v.cy)>mat.ct).forEach(v=>
+    add("low","New this year", v.label, "First appears this year at "+dispRaw(v.cy)+"."));
+  /* 8. individually material ledgers, for scoping */
+  S.tb.map(r=>({r, v:Math.abs(num(r.dr)-num(r.cr))})).filter(x=>x.v>mat.om)
+    .sort((a,b)=>b.v-a.v).slice(0,15).forEach(x=>
+      add("info","Above overall materiality",(x.r.code?x.r.code+" ":"")+x.r.name,
+        dispRaw(x.v)+" — individually material, consider specific testing."));
+  const rank={high:0,medium:1,low:2,info:3};
+  return out.sort((a,b)=>rank[a.sev]-rank[b.sev]);
+}
+function complianceChecks(){
+  const m=M(), f=m.f, cy=m.cy, out=[];
+  const add=(ok,label,detail,ref)=>out.push({ok, label, detail, ref});
+  const tol=num(S.meta.tol);
+  /* Bonus Act, 2030 */
+  const bonusCharged = r2(cy.exp_bonus||0);
+  const bonusProv = r2(cy.cl_bonus||0);
+  const base = r2(m.tot.pbtC + bonusCharged);
+  const rate = num(S.meta.bonus)||10;
+  const bonusDue = r2(base*rate/(100+rate));
+  if(S.fw!=="NPO"){
+    add(Math.abs(bonusDue-bonusCharged)<=Math.max(tol, Math.abs(bonusDue)*0.01),
+      "Staff bonus at "+rate+"% of profit before bonus and tax",
+      "Computed "+dispRaw(bonusDue)+" on a base of "+dispRaw(base)+"; charged "+dispRaw(bonusCharged)+
+      (Math.abs(bonusDue-bonusCharged)>tol?" — difference "+dispRaw(r2(bonusCharged-bonusDue)):""),
+      "Bonus Act, 2030 s.5");
+  }
+  /* depreciation book vs tax */
+  const taxDep=r2(S.pools.reduce((s,p)=>s+poolDep(p),0));
+  const bookDep=r2(cy.exp_dep||0);
+  add(taxDep>0 || bookDep<=tol, "Depreciation computed under the Income Tax Act",
+    bookDep?("Books "+dispRaw(bookDep)+" against Schedule 2 "+dispRaw(taxDep)+"; timing difference "+dispRaw(r2(bookDep-taxDep))):"No depreciation charged",
+    "Income Tax Act, 2058 Sch. 2");
+  /* deferred tax on that difference */
+  if(f.deferredTax){
+    const dtBal=r2((cy.ncl_dtl||0)-(cy.nca_dta||0));
+    add(Math.abs(bookDep-taxDep)<=tol || Math.abs(dtBal)>tol,
+      "Deferred tax recognised on temporary differences",
+      Math.abs(dtBal)>tol?("Net balance "+dispRaw(dtBal)+" at "+S.meta.dtrate+"%"):
+        "A book to tax depreciation difference of "+dispRaw(r2(bookDep-taxDep))+" exists but no deferred tax is recognised",
+      "NAS 12");
+  }
+  /* tax rate */
+  const stat=(TAX_CATS.find(t=>t[0]===S.meta.taxcat)||[,25])[1];
+  add(Math.abs(num(S.meta.taxrate)-stat)<0.01 || S.meta.taxcat==="Custom rate",
+    "Tax rate agrees to the entity's status",
+    "Using "+S.meta.taxrate+"% for "+S.meta.taxcat, "Income Tax Act, 2058 Sch. 1");
+  /* current tax charge vs computation */
+  if(S.fw!=="NPO"){
+    const c=taxComp();
+    add(Math.abs(r2(c.taxOn-(cy.tax_cur||0)))<=Math.max(tol,Math.abs(c.taxOn)*0.02),
+      "Current tax charge agrees to the computation",
+      "Computation "+dispRaw(c.taxOn)+" against "+dispRaw(cy.tax_cur||0)+" in the accounts","");
+  }
+  /* audit fee */
+  add(Math.abs(cy.exp_audit||0)>tol, "Auditor's remuneration provided for",
+    Math.abs(cy.exp_audit||0)>tol?dispRaw(cy.exp_audit):"No audit fee is charged in the accounts","Companies Act, 2063");
+  /* employee obligations */
+  const emp=Math.abs(cy.exp_emp||0);
+  add(emp<=tol || Math.abs((cy.ncl_gratuity||0)+(cy.ncl_leave||0))>tol,
+    "Gratuity and leave obligations recognised",
+    emp>tol?("Employee benefits expense "+dispRaw(emp)+"; obligation carried "+dispRaw(r2((cy.ncl_gratuity||0)+(cy.ncl_leave||0)))):"No employee costs",
+    "Labour Act, 2074");
+  /* statutory dues */
+  add(emp<=tol || Math.abs(cy.cl_stat||0)>tol, "Statutory dues payable recognised",
+    Math.abs(cy.cl_stat||0)>tol?("TDS, VAT and SSF payable "+dispRaw(cy.cl_stat)):"No statutory dues are carried at the year end — confirm all TDS and VAT has been deposited",
+    "Income Tax Act, 2058 s.90");
+  /* donation cap */
+  if(S.fw!=="NPO" && Math.abs(cy.exp_donation||0)>tol){
+    const c=taxComp();
+    add(true, "Donation restricted to the section 12 limit",
+      "Charged "+dispRaw(cy.exp_donation)+"; allowed "+dispRaw(c.donationAllow)+" — lower of 5% of adjusted taxable income and Rs 100,000",
+      "Income Tax Act, 2058 s.12");
+  }
+  /* loss carry forward */
+  if(num(S.meta.cfloss)>0){
+    const c=taxComp();
+    add(true,"Business loss carried forward","Brought forward "+dispRaw(num(S.meta.cfloss))+", remaining "+dispRaw(c.lossCf)+
+      " — available for seven income years","Income Tax Act, 2058 s.20");
+  }
+  /* comparatives */
+  add(S.meta.first==="yes" || Math.abs(m.tot.sofpDiffP)<=tol,
+    "Comparative figures presented and balanced",
+    S.meta.first==="yes"?"First reporting period — no comparatives required":
+      "Prior year position differs by "+dispRaw(m.tot.sofpDiffP),"NAS 1");
+  /* policies + notes */
+  add(!!(S.policies||"").trim(),"Significant accounting policies documented",
+    (S.policies||"").trim()?"Policy note prepared":"No accounting policy note has been written","NAS 1");
+  return out;
+}
+function auditSummary(){
+  const ex=exceptionReport(), m=M();
+  return {
+    tieouts:{pass:m.checks.filter(c=>c.ok).length, total:m.checks.length},
+    exceptions:{high:ex.filter(e=>e.sev==="high").length, medium:ex.filter(e=>e.sev==="medium").length,
+                low:ex.filter(e=>e.sev==="low").length, info:ex.filter(e=>e.sev==="info").length},
+    compliance:(()=>{const c=complianceChecks();return {pass:c.filter(x=>x.ok).length,total:c.length};})()
+  };
+}
+</script>
+
+<script>
+/* ---------- 27. AUDIT SCREEN ---------- */
+let curAud="summary";
+const SEV_CHIP={high:"bad", medium:"warn", low:"info", info:"ok"};
+const SEV_WORD={high:"Follow up", medium:"Review", low:"Note", info:"Scoping"};
+function fmtRatio(v,f){ if(v===null||v===undefined||!isFinite(v)) return "—";
+  return fmtNum(v, f==="d"?0:2, "intl")+(f==="%"?"%":f==="d"?" days":""); }
+function renderAud(){
+  if(!S.fw || !S.tb.length){
+    $("audBody").innerHTML='<div class="card"><p class="hint">Import a trial balance to run the audit checks.</p></div>';
+    $("audTabs").innerHTML=""; return; }
+  const tabs=[["summary","Summary"],["tie","Tie-outs"],["mat","Materiality"],
+              ["anal","Analytical review"],["exc","Exceptions"],["comp","Nepal compliance"]];
+  if(!tabs.some(t=>t[0]===curAud)) curAud="summary";
+  $("audTabs").innerHTML=tabs.map(t=>`<button data-sub="${t[0]}" aria-selected="${t[0]===curAud}">${esc(t[1])}</button>`).join("");
+  $("audTabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{curAud=b.dataset.sub;renderAud();});
+  const m=M(), mat=materiality(), a=auditCfg();
+  let h="";
+  if(curAud==="summary"){
+    const sm=auditSummary(), ex=exceptionReport();
+    h=`<div class="kpis">
+      <div class="kpi"><div class="k">Tie-outs</div><div class="v ${sm.tieouts.pass===sm.tieouts.total?"good":"bad"}">${sm.tieouts.pass} / ${sm.tieouts.total}</div><div class="s">Statements agree to the ledger</div></div>
+      <div class="kpi"><div class="k">Overall materiality</div><div class="v">${dispRaw(mat.om)}</div><div class="s">${mat.pct}% of ${esc(mat.basisLabel.toLowerCase())}</div></div>
+      <div class="kpi"><div class="k">Performance materiality</div><div class="v">${dispRaw(mat.pm)}</div><div class="s">${a.pm}% of overall</div></div>
+      <div class="kpi"><div class="k">To follow up</div><div class="v ${sm.exceptions.high?"bad":"good"}">${sm.exceptions.high}</div><div class="s">${sm.exceptions.medium} to review, ${sm.exceptions.low} noted</div></div>
+      <div class="kpi"><div class="k">Compliance</div><div class="v ${sm.compliance.pass===sm.compliance.total?"good":"bad"}">${sm.compliance.pass} / ${sm.compliance.total}</div><div class="s">Nepal statutory tests</div></div></div>
+      <div class="card"><h3>Matters needing attention</h3>${
+        ex.filter(e=>e.sev==="high"||e.sev==="medium").length ?
+        excTable(ex.filter(e=>e.sev==="high"||e.sev==="medium").slice(0,25)) :
+        '<p class="hint">Nothing above the review threshold. Check the other tabs for notes and scoping items.</p>'}</div>
+      <div class="card"><h3>Failed checks</h3>${
+        m.checks.filter(c=>!c.ok).length ? tieTable(m.checks.filter(c=>!c.ok)) :
+        '<p class="hint">All tie-out checks pass — the statements agree to the trial balance and the schedules.</p>'}
+        ${complianceChecks().filter(c=>!c.ok).length?"<div style='margin-top:14px'>"+compTable(complianceChecks().filter(c=>!c.ok))+"</div>":""}</div>`;
+  } else if(curAud==="tie"){
+    h=`<div class="card"><h3>Tie-out and integrity checks<span class="rt">${m.checks.filter(c=>c.ok).length} of ${m.checks.length} pass</span></h3>
+      ${tieTable(m.checks)}</div>`;
+  } else if(curAud==="mat"){
+    h=`<div class="card"><h3>Materiality</h3>
+      <div class="grid-f" style="margin-bottom:16px">
+        <label class="f">Benchmark<select data-aud="basis">
+          <option value="">Automatic — ${esc(mat.basisLabel)}</option>
+          ${MAT_BASES.map(b=>`<option value="${b.id}"${a.basis===b.id?" selected":""}>${esc(b.label)} (${b.range})</option>`).join("")}
+        </select></label>
+        <label class="f">Percentage applied<input data-aud="pct" type="number" step="0.1" value="${mat.pct}"></label>
+        <label class="f">Performance materiality (% of overall)<input data-aud="pm" type="number" step="1" value="${esc(a.pm)}"></label>
+        <label class="f">Clearly trivial (% of overall)<input data-aud="ct" type="number" step="1" value="${esc(a.ct)}"></label>
+      </div>
+      <table class="fs" style="max-width:640px"><tbody>
+        <tr class="it"><td class="l">${esc(mat.basisLabel)}</td><td class="n">${dispRaw(mat.basisValue)}</td></tr>
+        <tr class="it"><td class="l">Percentage applied</td><td class="n">${mat.pct}%</td></tr>
+        <tr class="tot"><td class="l">Overall materiality</td><td class="n">${dispRaw(mat.om)}</td></tr>
+        <tr class="it"><td class="l">Performance materiality at ${a.pm}%</td><td class="n">${dispRaw(mat.pm)}</td></tr>
+        <tr class="tot grand"><td class="l">Clearly trivial threshold at ${a.ct}%</td><td class="n">${dispRaw(mat.ct)}</td></tr>
+      </tbody></table>
+      <p class="hint" style="margin-top:14px">Benchmarks available for this engagement: ${MAT_BASES.map(b=>esc(b.label)+" "+dispRaw(mat.vals[b.id])).join(" &middot; ")}.
+      Performance materiality reduces overall materiality to allow for undetected misstatements; anything below the clearly trivial threshold need not be accumulated.</p></div>`;
+  } else if(curAud==="anal"){
+    const R=ratioSet(), V=varianceReport();
+    h=`<div class="card"><h3>Key ratios</h3>
+      <div class="gwrap" style="max-height:none"><table class="g"><thead><tr>
+        <th style="min-width:200px">Ratio</th><th class="num">${esc(S.meta.cyLabel||"Current")}</th>
+        <th class="num">${esc(S.meta.pyLabel||"Prior")}</th><th class="num">Change</th><th>Comment</th></tr></thead><tbody>`+
+      R.map(r=>{ const ch=(r.cy!==null&&r.py!==null)?r2(r.cy-r.py):null;
+        const big=ch!==null&&r.py&&Math.abs(ch/Math.abs(r.py)*100)>=25;
+        return `<tr><td style="padding:6px 9px">${esc(r.name)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono)">${fmtRatio(r.cy,r.fmt)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);color:var(--muted)">${fmtRatio(r.py,r.fmt)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);${big?"color:var(--crimson);font-weight:600":""}">${ch===null?"—":fmtRatio(ch,r.fmt)}</td>
+        <td style="padding:6px 9px;font-size:12px;color:var(--muted)">${big?"Moved more than 25% — explain":esc(r.note||"")}</td></tr>`;}).join("")+
+      `</tbody></table></div></div>
+      <div class="card"><h3>Year on year movement<span class="rt">Flagged above ${dispRaw(mat.pm)} and ${a.varPct}%</span></h3>
+      <label class="f" style="max-width:220px;margin-bottom:12px">Percentage threshold<input data-aud="varPct" type="number" step="1" value="${esc(a.varPct)}"></label>
+      <div class="gwrap" style="max-height:60vh"><table class="g"><thead><tr>
+        <th style="min-width:260px">Line</th><th class="num">${esc(S.meta.cyLabel||"Current")}</th>
+        <th class="num">${esc(S.meta.pyLabel||"Prior")}</th><th class="num">Change</th><th class="num">%</th></tr></thead><tbody>`+
+      V.map(v=>`<tr${v.flag?' style="background:var(--ochre-wash)"':""}>
+        <td style="padding:6px 9px">${esc(v.label)}<span style="color:var(--faint);font-size:11px"> · ${esc(v.group)}</span></td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px">${dispRaw(v.cy)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px;color:var(--muted)">${dispRaw(v.py)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px;${v.flag?"font-weight:600":""}">${dispRaw(v.chg)}</td>
+        <td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px">${v.pct===null?"new":fmtNum(v.pct,1,"intl")+"%"}</td></tr>`).join("")+
+      `</tbody></table></div></div>`;
+  } else if(curAud==="exc"){
+    const ex=exceptionReport();
+    const counts=["high","medium","low","info"].map(sv=>`<span class="chip ${SEV_CHIP[sv]}" style="margin-right:6px"><span class="dot"></span>${SEV_WORD[sv]} ${ex.filter(e=>e.sev===sv).length}</span>`).join("");
+    h=`<div class="card"><h3>Exception report<span class="rt">${counts}</span></h3>
+      ${ex.length?excTable(ex):'<p class="hint">No exceptions found.</p>'}</div>`;
+  } else {
+    const c=complianceChecks();
+    h=`<div class="card"><h3>Nepal statutory and framework checks<span class="rt">${c.filter(x=>x.ok).length} of ${c.length} pass</span></h3>
+      ${compTable(c)}
+      <p class="hint" style="margin-top:14px">These are arithmetic and completeness tests against the trial balance. They do not replace the audit programme, and passing them is not an opinion.</p></div>`;
+  }
+  $("audBody").innerHTML=h;
+  document.querySelectorAll("[data-aud]").forEach(el=>el.oninput=()=>{
+    auditCfg()[el.dataset.aud] = el.value; persist();
+    clearTimeout(window._audT); window._audT=setTimeout(renderAud, 500);
+  });
+}
+function tieTable(list){
+  return `<div class="gwrap" style="max-height:none"><table class="g"><tbody>`+list.map(c=>
+    `<tr><td style="padding:8px 9px;width:96px"><span class="chip ${c.ok?"ok":"bad"}"><span class="dot"></span>${c.ok?"Pass":"Review"}</span></td>
+     <td style="padding:8px 9px">${esc(c.label)}</td>
+     <td style="padding:8px 9px;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-align:right">${esc(c.detail)}</td></tr>`).join("")+
+    `</tbody></table></div>`;
+}
+function compTable(list){
+  return `<div class="gwrap" style="max-height:none"><table class="g"><tbody>`+list.map(c=>
+    `<tr><td style="padding:8px 9px;width:96px"><span class="chip ${c.ok?"ok":"bad"}"><span class="dot"></span>${c.ok?"Pass":"Check"}</span></td>
+     <td style="padding:8px 9px"><div>${esc(c.label)}</div>
+       <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(c.detail)}</div></td>
+     <td style="padding:8px 9px;font-size:11px;color:var(--faint);text-align:right;white-space:nowrap">${esc(c.ref||"")}</td></tr>`).join("")+
+    `</tbody></table></div>`;
+}
+function excTable(list){
+  return `<div class="gwrap" style="max-height:60vh"><table class="g"><thead><tr>
+    <th style="width:96px">Priority</th><th style="width:180px">Type</th><th style="min-width:220px">Item</th><th>Detail</th></tr></thead><tbody>`+
+    list.map(e=>`<tr><td style="padding:7px 9px"><span class="chip ${SEV_CHIP[e.sev]}"><span class="dot"></span>${SEV_WORD[e.sev]}</span></td>
+      <td style="padding:7px 9px;font-size:12.5px">${esc(e.type)}</td>
+      <td style="padding:7px 9px">${esc(e.item)}</td>
+      <td style="padding:7px 9px;font-size:12px;color:var(--muted)">${esc(e.detail)}</td></tr>`).join("")+
+    `</tbody></table></div>`;
 }
 </script>
 
@@ -2937,6 +3647,20 @@ function init(){
     toast(FRAMEWORKS[pendingFw].abbr+" selected."); if(curStep==="tb") renderTb(); };
   $("btnParse").onclick = ()=>{ const t=$("tbPaste").value; if(!t.trim()){ toast("Paste the trial balance first.", true); return; }
     importTB(t, S.tb.length>0 && confirm("Add these rows to the existing "+S.tb.length+" ledgers?\n\nOK = append   ·   Cancel = replace")); $("tbPaste").value=""; };
+  $("btnXlsxIn").onclick = ()=>{ if(!S.fw){ toast("Pick a reporting framework first.", true); openFwModal(); return; } $("fileXlsx").click(); };
+  $("fileXlsx").onchange = async e=>{
+    const f=e.target.files[0]; e.target.value=""; if(!f) return;
+    const btn=$("btnXlsxIn"), old=btn.textContent; btn.disabled=true; btn.textContent="Reading…";
+    try{ const sheets = await readXlsx(await f.arrayBuffer()); openImport(sheets); }
+    catch(err){ toast("Could not read that file: "+err.message, true); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  };
+  $("impSheet").onchange = ()=> selectImportSheet(+$("impSheet").value);
+  $("impHdr").oninput = ()=>{ IMP.hdr=Math.max(-1,(parseInt($("impHdr").value,10)||0)-1);
+    IMP.roles=guessRoles(IMP.sheets[IMP.si].rows, IMP.hdr); renderImport(); };
+  $("impFirst").oninput = ()=>{ IMP.first=Math.max(0,(parseInt($("impFirst").value,10)||1)-1); renderImport(); };
+  $("impCancel").onclick = ()=> $("impModal").hidden=true;
+  $("impOk").onclick = runImport;
   $("btnCsv").onclick = ()=> $("fileCsv").click();
   $("fileCsv").onchange = e=>{ const f=e.target.files[0]; if(!f) return;
     const fr=new FileReader(); fr.onload=()=>importTB(fr.result,false); fr.readAsText(f); e.target.value=""; };
