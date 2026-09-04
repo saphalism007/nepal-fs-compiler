@@ -14,8 +14,11 @@ console.log("\nSidebar");
 ok("Tools sits below Export as a utility",
   ev(`[...document.querySelectorAll(".step")].map(b=>b.dataset.step).join(",")`).endsWith("exp,tools"),
   ev(`[...document.querySelectorAll(".step")].map(b=>b.dataset.step).join(",")`));
-ok("workflow numbering has no gaps",
-  ev(`[...document.querySelectorAll(".step:not(.util) .step-n")].map(e=>e.textContent).join(",")`)==="1,2,3,4,5,6,7,8,9,10");
+ok("every step is numbered, no gaps and no odd one out",
+  ev(`[...document.querySelectorAll(".step .step-n")].map(e=>e.textContent).join(",")`)==="1,2,3,4,5,6,7,8,9,10,11",
+  ev(`[...document.querySelectorAll(".step .step-n")].map(e=>e.textContent).join(",")`));
+ok("no step carries a different circle style",
+  ev(`document.querySelectorAll(".step-n.util").length`)===0);
 
 console.log("\nCalculator is scoped to its own panel");
 ev(`nav("sch")`);
