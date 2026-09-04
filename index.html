@@ -592,7 +592,7 @@ body.printing #printPack{display:block}
 
 <div class="toast" id="toast" hidden></div>
 
-<script>window.__BUILD__="4912d7de";</script>
+<script>window.__BUILD__="80eace73";</script>
 <script>
 "use strict";
 /* ============================================================
@@ -1532,7 +1532,7 @@ function agg(){
     const dcy = c.sign * ((num(r.dr)+a.dr)-(num(r.cr)+a.cr));
     const dpy = c.sign * (num(r.pdr)-num(r.pcr));
     cy[r.map]=(cy[r.map]||0)+dcy; py[r.map]=(py[r.map]||0)+dpy;
-    (ledgers[r.map]=ledgers[r.map]||[]).push({code:r.code,name:r.name,cy:dcy,py:dpy});
+    (ledgers[r.map]=ledgers[r.map]||[]).push({id:r.id,code:r.code,name:r.name,cy:dcy,py:dpy});
   }
   for(const k in cy){ cy[k]=r2(cy[k]); py[k]=r2(py[k]); }
   return {cy,py,ledgers};
@@ -2465,7 +2465,7 @@ function noteBlocks(m){
     if(n.type==="dt"){ out.push({no:n.no, title:n.title, kind:"matrix", matrix:matrixOf(SCHEMA.dt,S.dt),
       lead:"Deferred tax is measured at "+S.meta.dtrate+"% being the rate expected to apply when the temporary differences reverse. Positive amounts are liabilities and negative amounts are assets."}); continue; }
     const led = (a.ledgers[n.id]||[]).slice().sort((x,y)=>Math.abs(y.cy)-Math.abs(x.cy));
-    out.push({no:n.no, title:n.title, kind:"rows",
+    out.push({no:n.no, id:n.id, title:n.title, kind:"rows",
       rows: led.map(l=>({label:(S.meta.showCodes==="yes"&&l.code?l.code+"  ":"")+l.name, cy:l.cy, py:l.py})),
       total:{cy:r2(led.reduce((s,l)=>s+l.cy,0)), py:r2(led.reduce((s,l)=>s+l.py,0))}});
   }
@@ -3221,7 +3221,74 @@ function buildSheets(){
     sheets["Financial Instruments"]=fsh;
   }
 
-  /* ---------------- 5. statements ---------------- */
+  /* ---------------- 5. notes, read straight off the ledger rows ----------------
+     Built before the statements so the face of each statement can quote the note
+     rather than repeat the working: trial balance -> note -> statement. */
+  const noteTotalRow={};
+  const nt=new Sheet(NOTN,[8,58,18,18]);
+  hdrBlock(nt,"Notes to the financial statements",periodText("for"),4);
+  nt.freeze=nt.rows.length;
+  for(const b of blocks){
+    nt.blank();
+    nt.r([cS(String(b.no)+".",ST.lblB),cS(b.title,ST.lblB)]);
+    if(b.lead){ nt.r([null,cS(b.lead,ST.wrap)]); nt.merge(nt.rows.length,1,nt.rows.length,3); }
+    if(b.kind==="text"){
+      for(const para of String(b.text).split(/\n+/)){
+        const t=para.trim(); if(!t) continue;
+        if(/:$/.test(t)&&t.length<70) nt.r([null,cS(t.replace(/:$/,""),ST.lblB)]);
+        else { nt.r([null,cS(t,ST.wrap)]); nt.merge(nt.rows.length,1,nt.rows.length,3); }
+      }
+    } else if(b.kind==="rows"){
+      nt.r([null,cS("Particulars",ST.hdrL),cS(S.meta.cyLabel||"Current",ST.hdrR),
+            showPY?cS(S.meta.pyLabel||"Prior",ST.hdrR):null]);
+      const first=nt.rows.length+1;
+      const led=(m.a.ledgers[b.id]||[]);
+      b.rows.forEach((r,i)=>{
+        /* each note line points straight at its ledger row in the trial balance */
+        const src=led[i], sgn=(CATBY[b.id]||{}).sign||1;
+        const rw=(src && tbRowOf[src.id]) || null;
+        const fx=(L1,L2)=> rw ? (sgn>0?`(${A1(TBN,"$"+L1+"$"+rw)}-${A1(TBN,"$"+L2+"$"+rw)})/${DIV}`
+                                     :`(${A1(TBN,"$"+L2+"$"+rw)}-${A1(TBN,"$"+L1+"$"+rw)})/${DIV}`) : null;
+        const c1=fx("C","D"), c2=fx("E","F");
+        nt.r([null,cS(r.label,ST.lblI),
+          c1?cF(c1,sv(r.cy),ST.num):cN(sv(r.cy),ST.num),
+          showPY?(c2?cF(c2,sv(r.py),ST.num):cN(sv(r.py),ST.num)):null]);
+      });
+      const last=nt.rows.length;
+      nt.r([null,cS("Total",ST.lblTot),
+        last>=first?cF(`SUM(C${first}:C${last})`,sv(b.total.cy),ST.numTot):cN(sv(b.total.cy),ST.numTot),
+        showPY?(last>=first?cF(`SUM(D${first}:D${last})`,sv(b.total.py),ST.numTot):cN(sv(b.total.py),ST.numTot)):null]);
+      if(b.id) noteTotalRow[b.id]=nt.rows.length;   /* the figure the face will quote */
+    } else if(b.kind==="matrix"){
+      nt.r([null,cS("The detailed schedule is on its own sheet of this workbook.",ST.ital)]);
+    } else if(b.kind==="multi"){
+      for(const pt of b.parts){
+        nt.r([null,cS(pt.sub,ST.lblB)]);
+        if(pt.rows) pt.rows.forEach(r=>nt.r([null,cS(r.label,r.bold?ST.lblSub:ST.lblI),
+          cN(av(r.cy),r.bold?ST.numSub:ST.num)]));
+        else nt.r([null,cS("Set out on its own sheet of this workbook.",ST.ital)]);
+      }
+    }
+  }
+  sheets[NOTN]=nt;
+
+  /* Where a figure on the face of a statement comes from, in the order a reader
+     would follow it: the schedule that supports it, else the note that analyses
+     it, else the grouping of the trial balance. All three are already in
+     presentation units, so no further scaling is applied. */
+  const faceRef=(id, py)=>{
+    const col = py ? "D" : "C";
+    const sched = {
+      nca_ppe:   ppe   && A1(PPEN, "$L$"+ppe.totRow),
+      nca_intan: intan && A1(INTN, "$L$"+intan.totRow),
+      nca_gw:    intan && A1(INTN, "$L$"+intan.totRow)
+    }[id];
+    if(sched && !py) return sched;                 /* the schedule carries this year */
+    if(noteTotalRow[id]) return A1(NOTN, "$"+col+"$"+noteTotalRow[id]);
+    const g = gTerm(id, py);
+    return g || null;
+  };
+  /* ---------------- 6. statements ---------------- */
   function emitStmt(name,title,sub,rows,resolve){
     const nc=showPY?4:3;
     const sh=new Sheet(name, showPY?[58,7,18,18]:[58,7,18]);
@@ -3261,8 +3328,8 @@ function buildSheets(){
   const plRowOfSrc={};
   const pl=emitStmt(PLN,f.plTitle,periodText("for"),m.plRows,(r,i,rowOf,L,py)=>{
     if(!r.src) return null;
-    const g=gTerm(r.src,py); if(!g) return null;
-    return (r.neg?"-":"")+g;
+    const ref=faceRef(r.src,py); if(!ref) return null;
+    return (r.neg?"-":"")+ref;
   });
   m.plRows.forEach((r,i)=>{ if(r.src) plRowOfSrc[r.src]=pl.rowOf[i]; });
   const iProfit=m.plRows.findIndex(r=>r.isProfit);
@@ -3274,10 +3341,10 @@ function buildSheets(){
   const PLC=(L)=>profitRow?A1(PLN,"$"+L+"$"+profitRow):null;
   const sofp=emitStmt(SOFPN,f.sofpTitle,periodText("at"),m.sofpRows,(r,i,rowOf,L,py)=>{
     if(!r.src) return null;
-    const g=gTerm(r.src,py); if(!g) return null;
-    if(!r.equity) return g;
+    const ref=faceRef(r.src,py); if(!ref) return null;
+    if(!r.equity) return ref;
     /* the result for the year has not been closed off in the ledger, so add it here */
-    const parts=[g];
+    const parts=[ref];
     const reId = S.fw==="NPO" ? null : "eq_re";
     if(r.src===reId && profitRow) parts.push(A1(PLN,"$"+L+"$"+profitRow));
     if(S.fw==="NPO" && profitRow && r.src==="fund_unres") parts.push(A1(PLN,"$"+L+"$"+profitRow));
@@ -3345,54 +3412,6 @@ function buildSheets(){
     sheets[CFN]=cf.sh;
   }
 
-  /* ---------------- 6. notes, reading the ledger rows ---------------- */
-  const nt=new Sheet(NOTN,[8,58,18,18]);
-  hdrBlock(nt,"Notes to the financial statements",periodText("for"),4);
-  nt.freeze=nt.rows.length;
-  for(const b of blocks){
-    nt.blank();
-    nt.r([cS(String(b.no)+".",ST.lblB),cS(b.title,ST.lblB)]);
-    if(b.lead){ nt.r([null,cS(b.lead,ST.wrap)]); nt.merge(nt.rows.length,1,nt.rows.length,3); }
-    if(b.kind==="text"){
-      for(const para of String(b.text).split(/\n+/)){
-        const t=para.trim(); if(!t) continue;
-        if(/:$/.test(t)&&t.length<70) nt.r([null,cS(t.replace(/:$/,""),ST.lblB)]);
-        else { nt.r([null,cS(t,ST.wrap)]); nt.merge(nt.rows.length,1,nt.rows.length,3); }
-      }
-    } else if(b.kind==="rows"){
-      nt.r([null,cS("Particulars",ST.hdrL),cS(S.meta.cyLabel||"Current",ST.hdrR),
-            showPY?cS(S.meta.pyLabel||"Prior",ST.hdrR):null]);
-      const first=nt.rows.length+1;
-      const led=(m.a.ledgers[b.id]||[]);
-      b.rows.forEach((r,i)=>{
-        /* each note line points straight at its ledger row in the trial balance */
-        const src=led[i], sgn=(CATBY[b.id]||{}).sign||1;
-        const tr=src?Object.entries(tbRowOf).find(([id])=>{
-          const rec=S.tb.find(x=>x.id===id); return rec && rec.name===src.name && rec.code===src.code; }):null;
-        const rw=tr?tr[1]:null;
-        const fx=(L1,L2)=> rw ? (sgn>0?`(${A1(TBN,"$"+L1+"$"+rw)}-${A1(TBN,"$"+L2+"$"+rw)})/${DIV}`
-                                     :`(${A1(TBN,"$"+L2+"$"+rw)}-${A1(TBN,"$"+L1+"$"+rw)})/${DIV}`) : null;
-        const c1=fx("C","D"), c2=fx("E","F");
-        nt.r([null,cS(r.label,ST.lblI),
-          c1?cF(c1,sv(r.cy),ST.num):cN(sv(r.cy),ST.num),
-          showPY?(c2?cF(c2,sv(r.py),ST.num):cN(sv(r.py),ST.num)):null]);
-      });
-      const last=nt.rows.length;
-      nt.r([null,cS("Total",ST.lblTot),
-        last>=first?cF(`SUM(C${first}:C${last})`,sv(b.total.cy),ST.numTot):cN(sv(b.total.cy),ST.numTot),
-        showPY?(last>=first?cF(`SUM(D${first}:D${last})`,sv(b.total.py),ST.numTot):cN(sv(b.total.py),ST.numTot)):null]);
-    } else if(b.kind==="matrix"){
-      nt.r([null,cS("The detailed schedule is on its own sheet of this workbook.",ST.ital)]);
-    } else if(b.kind==="multi"){
-      for(const pt of b.parts){
-        nt.r([null,cS(pt.sub,ST.lblB)]);
-        if(pt.rows) pt.rows.forEach(r=>nt.r([null,cS(r.label,r.bold?ST.lblSub:ST.lblI),
-          cN(av(r.cy),r.bold?ST.numSub:ST.num)]));
-        else nt.r([null,cS("Set out on its own sheet of this workbook.",ST.ital)]);
-      }
-    }
-  }
-  sheets[NOTN]=nt;
 
   /* ---------------- 7. tax computation ---------------- */
   const c=taxComp();
