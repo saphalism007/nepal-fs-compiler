@@ -457,6 +457,15 @@ body.printing #printPack{display:block}
       <div id="audBody"></div>
     </section>
 
+    <!-- ============ TOOLS ============ -->
+    <section class="pane" id="pane-tools">
+      <div class="pane-head">
+        <h2>Tools</h2>
+        <p>A tape calculator that keeps every entry visible so a mistake can be corrected rather than retyped, and a Bikram Sambat to Gregorian converter covering 2070 to 2090.</p>
+      </div>
+      <div id="toolsBody"></div>
+    </section>
+
     <!-- ============ EXPORT ============ -->
     <section class="pane" id="pane-exp">
       <div class="pane-head">
@@ -1033,7 +1042,7 @@ const DEF = () => ({
   tb:[], ppe:[], intan:[], dt:[], pools:[], fi:{cat:[],hier:[],aging:[],mat:[]},
   taxAdd:[], taxLess:[], taxOther:{rebate:0,fees:0,tds:0,advance:0,exempt:0},
   cf:{}, soce:{openPY:{}, movPY:[], movCY:[]}, policies:"", extra:{},
-  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[]
+  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[], noteText:{}
 });
 let S = DEF();
 let onlyUnmapped = false;
@@ -1046,7 +1055,7 @@ function restore(){ try{ const raw=localStorage.getItem(LSKEY); if(!raw) return 
   S.fi=Object.assign({cat:[],hier:[],aging:[],mat:[]},o.fi||{}); S.soce=Object.assign({openPY:{},movPY:[],movCY:[]},o.soce||{});
   S.taxOther=Object.assign({rebate:0,fees:0,tds:0,advance:0,exempt:0},o.taxOther||{});
   S.coa=Object.assign({rules:[],captions:{}},o.coa||{}); S.learned=o.learned||{};
-  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; return true; }catch(e){ return false; } }
+  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; return true; }catch(e){ return false; } }
 
 let toastT;
 function toast(msg, err){ const t=$("toast"); t.textContent=msg; t.className="toast"+(err?" err":""); t.hidden=false;
@@ -1106,6 +1115,7 @@ const STEPS = [
   {id:"tax",   label:"Income tax"},
   {id:"fs",    label:"Financial statements"},
   {id:"audit", label:"Audit checks"},
+  {id:"tools", label:"Tools"},
   {id:"exp",   label:"Export"}
 ];
 let curStep = "setup";
@@ -1126,6 +1136,7 @@ function nav(id){
   if(id==="fs") renderFs();
   if(id==="audit") renderAud();
   if(id==="exp") renderExp();
+  if(id==="tools") renderTools();
   markSteps();
   window.scrollTo(0,0);
 }
@@ -1278,7 +1289,12 @@ function bindSetup(){
       S.meta[k]=e.value;
       if(k==="fy"){ const f=FY_LIST.find(x=>x[0]===e.value);
         if(f){ const idx=FY_LIST.indexOf(f); S.meta.cyLabel="FY "+f[0]; S.meta.endAd=f[3];
-          S.meta.endBs=f[0].split("/")[0].slice(0,2)+f[0].split("/")[1]+".03.31";
+          /* Ashad runs to 31 or 32 days depending on the year, so the year end moves */
+          const endY=parseInt(f[0].split("/")[0],10)+1;
+          const lastD=(typeof lastAshad==="function")?lastAshad(endY):31;
+          const endAd=(typeof bs2ad==="function")?bs2ad(endY,3,lastD):null;
+          if(endAd) S.meta.endAd=endAd.toISOString().slice(0,10);
+          S.meta.endBs=endY+".03."+lastD;
           const p=FY_LIST[idx+1]; S.meta.pyLabel=p?"FY "+p[0]:""; syncMetaToForm(); } }
       if(k==="taxcat"){ const t=TAX_CATS.find(x=>x[0]===e.value); if(t && t[0]!=="Custom rate"){ S.meta.taxrate=String(t[1]); S.meta.dtrate=String(t[1]); syncMetaToForm(); } }
       refreshChrome(); persist();
@@ -2317,6 +2333,17 @@ function M(){ const m = compute();
   const pyMap = (S.cf&&S.cf.pyMap)||{};
   m.cfRows.forEach(r=>{ if(!r.label) return;
     if(pyMap[r.label]!==undefined && pyMap[r.label]!=="") r.py = r2(num(pyMap[r.label])); });
+  /* a subtotal whose lines all carry a comparative can be added up, not left blank */
+  for(let pass=0; pass<3; pass++) m.cfRows.forEach(r=>{
+    if(r.type!=="tot" || (r.py!==null && r.py!==undefined)) return;
+    let sum=0, seen=0, miss=0;
+    const take=(v,k)=>{ if(v&&v.py!==null&&v.py!==undefined){ sum+=k*v.py; seen++; } else miss++; };
+    (r.add||[]).forEach(j=>take(m.cfRows[j],1));
+    (r.sub||[]).forEach(j=>take(m.cfRows[j],-1));
+    if(r.from!=null && r.to!=null) for(let k=r.from;k<=r.to;k++){
+      const v=m.cfRows[k]; if(!v||v.type!=="item") continue; take(v,1); }
+    if(seen && !miss) r.py=r2(sum);
+  });
   return m; }
 
 function matrixOf(spec, rows){
@@ -2329,9 +2356,15 @@ function matrixOf(spec, rows){
 function noteBlocks(m){
   const f = m.f, a = m.a, out = [];
   const cyL = S.meta.cyLabel||"Current year", pyL = S.meta.pyLabel||"Prior year";
-  out.push({no:1, title:"Corporate and general information", kind:"text", text: genInfo()});
-  out.push({no:2, title:"Basis of preparation", kind:"text", text: basisText()});
-  out.push({no:3, title:"Significant accounting policies", kind:"text", text: S.policies || STD_POLICIES()});
+  /* A prepared wording and your wording, side by side. What is shown and exported
+     is yours if you have written one, and the prepared one is always recoverable. */
+  const NT=(key,prepared)=>{ const ov=((S.noteText||{})[key]||"").trim(); return ov||prepared; };
+  out.push({no:1, title:"Corporate and general information", kind:"text", key:"info",
+            prepared:genInfo(), text: NT("info", genInfo())});
+  out.push({no:2, title:"Basis of preparation", kind:"text", key:"basis",
+            prepared:basisText(), text: NT("basis", basisText())});
+  out.push({no:3, title:"Significant accounting policies", kind:"text", key:"policies",
+            prepared:(S.policies || STD_POLICIES()), text: NT("policies", S.policies || STD_POLICIES())});
   for(const n of m.notes){
     if(n.type==="ppe"){ out.push({no:n.no, title:n.title, kind:"matrix", matrix:matrixOf(SCHEMA.ppe,S.ppe), lead:"Movements in the cost and accumulated depreciation of property, plant and equipment during the year were as follows."}); continue; }
     if(n.type==="intan"){ out.push({no:n.no, title:n.title, kind:"matrix", matrix:matrixOf(SCHEMA.intan,S.intan), lead:"Movements in the cost and accumulated amortisation of intangible assets during the year were as follows."}); continue; }
@@ -2367,10 +2400,12 @@ function noteBlocks(m){
   for(const g in groups) out.push({no:++n, title:g, kind:"rows",
     rows:groups[g].map(r=>({label:r.label,cy:num(r.cy),py:num(r.py)})),
     total:{cy:r2(groups[g].reduce((s,r)=>s+num(r.cy),0)), py:r2(groups[g].reduce((s,r)=>s+num(r.py),0))}});
-  out.push({no:++n, title:"Contingent liabilities, commitments and events after the reporting period", kind:"text",
-    text:(S.extra.contingent||"There were no material contingent liabilities or capital commitments outstanding at the reporting date.\n\nNo events have occurred after the reporting date that would require adjustment to, or disclosure in, these financial statements.")});
-  out.push({no:++n, title:"Related party disclosures", kind:"text",
-    text:(S.extra.rpt||"Key management personnel comprise the directors and senior officers of the entity. Transactions with related parties were carried out on terms agreed between the parties.")});
+  const contPrep=(S.extra.contingent||"There were no material contingent liabilities or capital commitments outstanding at the reporting date.\n\nNo events have occurred after the reporting date that would require adjustment to, or disclosure in, these financial statements.");
+  const rptPrep=(S.extra.rpt||"Key management personnel comprise the directors and senior officers of the entity. Transactions with related parties were carried out on terms agreed between the parties.");
+  out.push({no:++n, title:"Contingent liabilities, commitments and events after the reporting period",
+    kind:"text", key:"contingent", prepared:contPrep, text:NT("contingent", contPrep)});
+  out.push({no:++n, title:"Related party disclosures",
+    kind:"text", key:"rpt", prepared:rptPrep, text:NT("rpt", rptPrep)});
   return out;
 }
 function genInfo(){
@@ -2534,17 +2569,28 @@ function renderFs(){
     const hasPy = Object.values(S.cf.pyMap||{}).some(v=>v!=="" && v!==null && v!==undefined);
     const cfPY = showPY && (editing || hasPy);
     h = `<div class="btnrow" style="margin-bottom:14px;max-width:940px;margin-left:auto;margin-right:auto">
-        <button class="btn sm" id="btnCfPy">${editing?"Done editing comparatives":(hasPy?"Edit comparative figures":"Enter comparative figures")}</button>
+        <button class="btn sm ${editing?"pri":""}" id="btnCfPy">${editing?"Done editing comparatives":(hasPy?"Edit comparative figures":"Enter comparative figures")}</button>
+        ${hasPy?'<button class="btn sm" id="btnCfPyClear">Clear comparatives</button>':""}
         <span class="hint">${showPY&&!cfPY
-          ? "Working capital movements for the comparative year need the balances at the start of that year, which the trial balance does not carry. Enter the comparative cash flow from last year&rsquo;s signed accounts &mdash; the figures that can be derived are filled in for you."
+          ? "Working capital movements for the comparative year need the balances at the start of that year, which the trial balance does not carry. Enter the comparative cash flow from last year's signed accounts - the figures that can be derived are filled in for you."
           : "The current year is derived from the trial balance and schedules; comparatives are as entered from the prior year signed accounts."}</span></div>
       <div class="sheet">${sheetHead(f.cfTitle, periodText("for"))}
-      <div class="sheet-units">${esc(unitNote())} &mdash; ${S.meta.cfmethod==="direct"?"direct method":"indirect method"}</div>
+      <div class="sheet-units">${esc(unitNote())} - ${S.meta.cfmethod==="direct"?"direct method":"indirect method"}</div>
       ${rowsHTML(m.cfRows, cfPY, editing)}${sigBlock()}</div>`;
   } else {
-    h = notesHTML(m);
+    const editing=!!S.cf.editNotes;
+    h = `<div class="btnrow" style="margin-bottom:14px;max-width:940px;margin-left:auto;margin-right:auto">
+        <button class="btn sm ${editing?"pri":""}" id="btnNoteEdit">${editing?"Done editing":"Edit the wording"}</button>
+        <span class="hint">${editing?"Your wording replaces the prepared one on the statements and in every export. Revert on any note to go back."
+          :"Every narrative note can be rewritten in your own words and reverted."}</span></div>` + notesHTML(m, editing);
   }
   $("fsBody").innerHTML = h;
+  if($("btnNoteEdit")) $("btnNoteEdit").onclick=()=>{ S.cf.editNotes=!S.cf.editNotes; renderFs(); };
+  document.querySelectorAll("[data-note]").forEach(el=>el.oninput=()=>{
+    S.noteText=S.noteText||{}; S.noteText[el.dataset.note]=el.value; persist(); });
+  document.querySelectorAll("[data-noterev]").forEach(b=>b.onclick=()=>{
+    delete S.noteText[b.dataset.noterev]; persist(); renderFs(); toast("Reverted to the prepared wording."); });
+  if($("btnCfPyClear")) $("btnCfPyClear").onclick=()=>{ S.cf.pyMap={}; persist(); renderFs(); toast("Comparative figures cleared."); };
   if($("btnCfPy")) $("btnCfPy").onclick=()=>{
     if(!S.cf.editPY && !Object.keys(S.cf.pyMap||{}).length){
       S.cf.pyMap={}; M().cfRows.forEach(r=>{ if(!r.label||r.type==="sec"||r.type==="sub"||r.type==="blank") return;
@@ -2568,7 +2614,7 @@ function soceFsHTML(m){
   if(Math.abs(s.diffC)>num(S.meta.tol)) h+=`<p class="hint" style="color:var(--crimson);margin-top:12px">Closing balances differ from the statement of financial position by ${dispRaw(s.diffC)}. Enter the missing movements on the schedules step.</p>`;
   return h;
 }
-function notesHTML(m){
+function notesHTML(m, editing){
   const blocks = noteBlocks(m), showPY = S.meta.first!=="yes";
   const cyL=S.meta.cyLabel||"Current year", pyL=S.meta.pyLabel||"Prior year";
   let h=`<div class="sheet">${sheetHead("Notes to the financial statements", periodText("for"))}
@@ -2576,7 +2622,13 @@ function notesHTML(m){
   for(const b of blocks){
     h += `<h4>${b.no}. &nbsp;${esc(b.title)}</h4>`;
     if(b.lead) h += `<p>${esc(b.lead)}</p>`;
-    if(b.kind==="text"){
+    if(b.kind==="text" && editing && b.key){
+      const own=((S.noteText||{})[b.key]||"").trim();
+      h += `<textarea class="paste" data-note="${esc(b.key)}" style="min-height:150px;font-family:var(--sans);font-size:13px">${esc(b.text)}</textarea>
+        <div class="btnrow" style="margin:6px 0 10px">${own
+          ? `<button class="btn sm" data-noterev="${esc(b.key)}">Revert to the prepared wording</button><span class="chip warn"><span class="dot"></span>Your wording</span>`
+          : '<span class="hint">Prepared wording. Type here to make it yours.</span>'}</div>`;
+    } else if(b.kind==="text"){
       for(const para of String(b.text).split(/\n+/)){
         const t=para.trim(); if(!t) continue;
         if(/:$/.test(t) && t.length<70) h+=`<p style="font-weight:600;margin-top:12px;color:var(--ink)">${esc(t.replace(/:$/,""))}</p>`;
@@ -4622,6 +4674,157 @@ function renderJe(){
     S.je[i].lines[j].dr=r2(num(el.value)); persist(); refreshChrome(); });
   document.querySelectorAll("[data-jec]").forEach(el=>el.oninput=()=>{ const [i,j]=el.dataset.jec.split(".").map(Number);
     S.je[i].lines[j].cr=r2(num(el.value)); persist(); refreshChrome(); });
+}
+</script>
+
+<script>
+/* ---------- 33. NEPALI CALENDAR ----------
+   Days in each Nepali month. The table is checked on load against the Nepali new
+   year and fiscal year end dates, so a wrong row is reported rather than quietly
+   producing wrong statutory dates. */
+const NEP_CAL={
+2070:[31,31,32,31,31,31,30,29,30,29,30,30],2071:[31,31,32,31,31,31,30,29,30,29,30,30],
+2072:[31,32,31,32,31,30,30,29,30,29,30,30],2073:[31,31,32,31,32,31,30,29,30,29,30,30],
+2074:[31,31,32,31,31,31,30,29,30,29,30,30],2075:[31,32,31,32,31,30,30,29,30,29,30,30],
+2076:[31,32,31,32,31,30,30,30,29,29,30,30],2077:[31,32,31,32,31,30,30,30,29,30,29,31],
+2078:[31,31,32,31,31,30,30,30,29,30,30,30],2079:[31,32,31,32,31,30,30,30,29,29,30,30],
+2080:[31,32,31,32,31,30,30,30,29,29,30,30],2081:[31,31,32,32,31,30,30,30,29,30,30,30],
+2082:[30,32,31,32,31,30,30,30,29,30,30,30],2083:[31,31,32,31,31,30,30,30,29,30,30,30],
+2084:[31,31,32,31,31,30,30,30,29,30,30,30],2085:[31,32,31,32,30,31,30,30,29,30,30,30],
+2086:[30,32,31,32,31,30,30,30,29,30,30,30],2087:[31,31,32,31,31,31,30,30,29,30,30,30],
+2088:[30,31,32,32,30,31,30,30,29,30,30,30],2089:[30,32,31,32,31,30,30,30,29,30,30,30],
+2090:[30,32,31,32,31,30,30,30,29,30,30,30]};
+const CAL_FROM=2070, CAL_TO=2090, CAL_ANCHOR=Date.UTC(2013,3,14);
+const DAY=86400000;
+function bsDays(y,m,d){ let n=0;
+  for(let yy=CAL_FROM; yy<y; yy++){ if(!NEP_CAL[yy]) return null; n+=NEP_CAL[yy].reduce((a,b)=>a+b,0); }
+  if(!NEP_CAL[y]) return null;
+  for(let mm=1; mm<m; mm++) n+=NEP_CAL[y][mm-1];
+  return n+(d-1); }
+function bs2ad(y,m,d){
+  if(!NEP_CAL[y]||m<1||m>12||d<1||d>NEP_CAL[y][m-1]) return null;
+  const n=bsDays(y,m,d); if(n===null) return null;
+  return new Date(CAL_ANCHOR+n*DAY); }
+function ad2bs(dt){
+  const t=Date.UTC(dt.getUTCFullYear(),dt.getUTCMonth(),dt.getUTCDate());
+  let n=Math.round((t-CAL_ANCHOR)/DAY);
+  if(n<0) return null;
+  for(let y=CAL_FROM; y<=CAL_TO; y++){
+    for(let m=1; m<=12; m++){
+      const len=NEP_CAL[y][m-1];
+      if(n<len) return {y,m,d:n+1};
+      n-=len; } }
+  return null; }
+function lastAshad(y){ return NEP_CAL[y] ? NEP_CAL[y][2] : 31; }
+function bsText(b){ return b ? b.y+"."+String(b.m).padStart(2,"0")+"."+String(b.d).padStart(2,"0")
+  +"  ("+NEP_MONTHS[b.m-1]+" "+b.d+", "+b.y+")" : "outside the table"; }
+/* the table is only useful if it is right, so prove it every time the app starts */
+function calSelfTest(){
+  const KNOWN=[[2070,1,1,"2013-04-14"],[2075,1,1,"2018-04-14"],[2077,1,1,"2020-04-13"],
+    [2079,1,1,"2022-04-14"],[2081,1,1,"2024-04-13"],[2082,1,1,"2025-04-14"],
+    [2083,1,1,"2026-04-14"],[2085,1,1,"2028-04-13"]];
+  const bad=[];
+  for(const [y,m,d,exp] of KNOWN){ const g=bs2ad(y,m,d);
+    if(!g || g.toISOString().slice(0,10)!==exp) bad.push(y+" expected "+exp+" got "+(g?g.toISOString().slice(0,10):"null")); }
+  return bad;
+}
+
+/* ---------- 34. TOOLS ---------- */
+let TAPE=[];
+function tapeTotal(){ return r2(TAPE.reduce((s,e)=>s+e.v,0)); }
+function renderTools(){
+  const bad=calSelfTest();
+  const today=new Date(), tb=ad2bs(today);
+  const h=`
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start">
+    <div class="card">
+      <h3>Tape calculator<span class="rt"><button class="btn sm" id="tapeClear">Clear</button></span></h3>
+      <div class="btnrow" style="margin-bottom:10px">
+        <input id="tapeIn" placeholder="Type a number and press Enter" style="flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink);font-family:var(--mono);text-align:right">
+        <button class="btn sm" data-op="+">Add</button>
+        <button class="btn sm" data-op="-">Subtract</button>
+      </div>
+      <div class="btnrow" style="margin-bottom:12px">
+        <button class="btn sm" data-op="*">x</button><button class="btn sm" data-op="/">divide</button>
+        <button class="btn sm" data-op="vatadd">add VAT 13%</button>
+        <button class="btn sm" data-op="vatex">extract VAT</button>
+        <button class="btn sm" data-op="pct">% of total</button>
+      </div>
+      <div class="gwrap" style="max-height:300px">
+        <table class="g"><tbody id="tapeBody"></tbody></table>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-2)">
+        <span style="font-weight:600">Total</span>
+        <span id="tapeTot" style="font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums"></span>
+      </div>
+      <p class="hint" style="margin-top:8px">Every entry stays on the tape. Click any line to remove it and the total corrects itself.</p>
+    </div>
+
+    <div class="card">
+      <h3>Bikram Sambat and Gregorian<span class="rt">${CAL_FROM} to ${CAL_TO} BS</span></h3>
+      ${bad.length?`<p class="hint" style="color:var(--crimson)">The calendar table failed its own check and should not be relied on: ${esc(bad.join("; "))}</p>`:""}
+      <p class="hint" style="margin-bottom:12px">Today is <strong>${esc(bsText(tb))}</strong> BS, ${esc(fmtAd(today.toISOString().slice(0,10)))}.</p>
+      <div class="grid-f" style="margin-bottom:8px">
+        <label class="f">Bikram Sambat (YYYY.MM.DD)<input id="cvBs" placeholder="2083.03.32"></label>
+        <label class="f">Gregorian<input id="cvAd" type="date"></label>
+      </div>
+      <div id="cvOut" class="hint" style="min-height:44px;padding:10px;background:var(--surface-3);border-radius:5px"></div>
+      <p class="hint" style="margin-top:12px"><strong>Fiscal year ends.</strong> Ashad has 31 or 32 days depending on the year, so the year end moves:</p>
+      <div class="gwrap" style="max-height:200px;margin-top:6px"><table class="g"><tbody>${
+        [2080,2081,2082,2083,2084,2085].map(y=>{const d=lastAshad(y), ad=bs2ad(y,3,d);
+          return `<tr><td style="padding:5px 9px">FY ${y-1}/${String(y).slice(2)}</td>
+            <td style="padding:5px 9px;font-family:var(--mono);font-size:12px">${y}.03.${d}</td>
+            <td style="padding:5px 9px;color:var(--muted)">${ad?fmtAd(ad.toISOString().slice(0,10)):""}</td></tr>`;}).join("")
+      }</tbody></table></div>
+    </div>
+  </div>`;
+  $("toolsBody").innerHTML=h;
+  const drawTape=()=>{
+    $("tapeBody").innerHTML = TAPE.length ? TAPE.map((e,i)=>
+      `<tr data-tape="${i}" style="cursor:pointer"><td style="padding:5px 9px;color:var(--muted);width:34px">${i+1}</td>
+       <td style="padding:5px 9px;font-size:12px;color:var(--muted)">${esc(e.note||"")}</td>
+       <td class="num" style="padding:5px 9px;font-family:var(--mono);font-variant-numeric:tabular-nums">${e.v<0?"("+fmtNum(-e.v,2,GM())+")":fmtNum(e.v,2,GM())}</td></tr>`).join("")
+      : '<tr><td style="padding:10px 9px;color:var(--faint)">Nothing on the tape yet.</td></tr>';
+    $("tapeTot").textContent = fmtNum(tapeTotal(),2,GM());
+    $("tapeBody").querySelectorAll("[data-tape]").forEach(tr=>tr.onclick=()=>{
+      TAPE.splice(+tr.dataset.tape,1); drawTape(); });
+  };
+  drawTape();
+  const take=()=>{ const v=num($("tapeIn").value); $("tapeIn").value=""; $("tapeIn").focus(); return v; };
+  const op=(o)=>{
+    const v=take();
+    if(o==="+") TAPE.push({v, note:"add"});
+    else if(o==="-") TAPE.push({v:-v, note:"subtract"});
+    else if(o==="*"){ const t=tapeTotal(); TAPE=[{v:r2(t*v), note:"total x "+v}]; }
+    else if(o==="/"){ if(!v){ toast("Cannot divide by zero.", true); return; }
+      const t=tapeTotal(); TAPE=[{v:r2(t/v), note:"total divided by "+v}]; }
+    else if(o==="vatadd") TAPE.push({v:r2(v*1.13), note:fmtNum(v,2,GM())+" plus VAT 13%"});
+    else if(o==="vatex"){ const base=r2(v/1.13);
+      TAPE.push({v:base, note:"taxable value"}); TAPE.push({v:r2(v-base), note:"VAT 13%"}); }
+    else if(o==="pct"){ const t=tapeTotal(); TAPE=[{v:r2(t*v/100), note:v+"% of "+fmtNum(t,2,GM())}]; }
+    drawTape();
+  };
+  document.querySelectorAll("[data-op]").forEach(b=>b.onclick=()=>op(b.dataset.op));
+  $("tapeClear").onclick=()=>{ TAPE=[]; drawTape(); };
+  $("tapeIn").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); op(e.shiftKey?"-":"+"); } };
+  const show=(t)=>$("cvOut").innerHTML=t;
+  $("cvBs").oninput=()=>{
+    const m=String($("cvBs").value).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if(!m) return show('<span style="color:var(--muted)">Enter a date as 2083.03.32</span>');
+    const y=+m[1],mo=+m[2],d=+m[3], ad=bs2ad(y,mo,d);
+    if(!ad) return show('<span style="color:var(--crimson)">'+(NEP_CAL[y]?("There is no "+NEP_MONTHS[mo-1]+" "+d+" in "+y+". That month has "+(NEP_CAL[y][mo-1]||"?")+" days."):("The table covers "+CAL_FROM+" to "+CAL_TO+" BS only."))+'</span>');
+    const iso=ad.toISOString().slice(0,10);
+    show("<strong>"+esc(fmtAd(iso))+"</strong><br>"+esc(NEP_MONTHS[mo-1])+" "+d+", "+y+" BS"+
+      "<br><span style='color:var(--muted)'>"+["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][ad.getUTCDay()]+"</span>");
+    $("cvAd").value=iso;
+  };
+  $("cvAd").oninput=()=>{
+    const v=$("cvAd").value; if(!v) return;
+    const b=ad2bs(new Date(v+"T00:00:00Z"));
+    if(!b) return show('<span style="color:var(--crimson)">Outside '+CAL_FROM+" to "+CAL_TO+' BS.</span>');
+    show("<strong>"+esc(bsText(b))+"</strong> BS<br>"+esc(fmtAd(v)));
+    $("cvBs").value=b.y+"."+String(b.m).padStart(2,"0")+"."+String(b.d).padStart(2,"0");
+  };
 }
 </script>
 
