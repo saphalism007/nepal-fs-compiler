@@ -594,7 +594,7 @@ body.printing #printPack{display:block}
 
 <div class="toast" id="toast" hidden></div>
 
-<script>window.__BUILD__="8fd584d1";</script>
+<script>window.__BUILD__="e9e95588";</script>
 <script>
 "use strict";
 /* ============================================================
@@ -2411,11 +2411,20 @@ function M(prepared){ const m = compute();
   const pyMap = (S.cf&&S.cf.pyMap)||{};
   m.cfRows.forEach(r=>{ if(!r.label) return;
     if(pyMap[r.label]!==undefined && pyMap[r.label]!=="") r.py = r2(num(pyMap[r.label])); });
-  /* a subtotal whose lines all carry a comparative can be added up, not left blank */
-  for(let pass=0; pass<3; pass++) m.cfRows.forEach(r=>{
+  /* Once a comparative has been entered anywhere, roll the subtotals up. A line
+     left empty is nil: last year's signed statement simply did not show it. Until
+     the first figure is entered nothing is assumed, so the column stays blank
+     rather than filling with spurious zeros. */
+  const started = Object.keys(pyMap).some(k=>pyMap[k]!==""&&pyMap[k]!==null&&pyMap[k]!==undefined);
+  if(started) for(let pass=0; pass<4; pass++) m.cfRows.forEach(r=>{
     if(r.type!=="tot" || (r.py!==null && r.py!==undefined)) return;
     let sum=0, seen=0, miss=0;
-    const take=(v,k)=>{ if(v&&v.py!==null&&v.py!==undefined){ sum+=k*v.py; seen++; } else miss++; };
+    const take=(v,k)=>{
+      if(!v){ miss++; return; }
+      if(v.py!==null && v.py!==undefined){ sum+=k*v.py; seen++; return; }
+      if(v.type==="item"){ seen++; return; }   /* not shown last year, so nil */
+      miss++;                                   /* a subtotal not yet computed */
+    };
     (r.add||[]).forEach(j=>take(m.cfRows[j],1));
     (r.sub||[]).forEach(j=>take(m.cfRows[j],-1));
     if(r.from!=null && r.to!=null) for(let k=r.from;k<=r.to;k++){
@@ -2651,7 +2660,7 @@ function renderFs(){
         <button class="btn sm ${editing?"pri":""}" id="btnCfPy">${editing?"Done editing comparatives":(hasPy?"Edit comparative figures":"Enter comparative figures")}</button>
         ${hasPy?'<button class="btn sm" id="btnCfPyClear">Clear comparatives</button>':""}
         <span class="hint">${showPY&&!cfPY
-          ? "Working capital movements for the comparative year need the balances at the start of that year, which the trial balance does not carry. Enter the comparative cash flow from last year's signed accounts - the figures that can be derived are filled in for you."
+          ? "Type the comparative column straight into the boxes, taking the figures from last year's signed cash flow. What can be derived from the prior year profit and loss is filled in already; the working capital lines cannot be, because they need balances from the year before that. Leave a line empty if last year did not show it, and the subtotals add themselves up."
           : "The current year is derived from the trial balance and schedules; comparatives are as entered from the prior year signed accounts."}</span></div>
       <div class="sheet">${sheetHead(f.cfTitle, periodText("for"))}
       <div class="sheet-units">${esc(unitNote())} - ${S.meta.cfmethod==="direct"?"direct method":"indirect method"}</div>
