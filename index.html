@@ -594,7 +594,7 @@ body.printing #printPack{display:block}
 
 <div class="toast" id="toast" hidden></div>
 
-<script>window.__BUILD__="04b67144";</script>
+<script>window.__BUILD__="8fd584d1";</script>
 <script>
 "use strict";
 /* ============================================================
@@ -1172,8 +1172,8 @@ const STEPS = [
   {id:"fs",    label:"Financial statements"},
   {id:"fin",   label:"Adjust & finalise"},
   {id:"audit", label:"Audit checks"},
-  {id:"tools", label:"Tools"},
-  {id:"exp",   label:"Export"}
+  {id:"exp",   label:"Export"},
+  {id:"tools", label:"Tools"}
 ];
 let curStep = "setup";
 const UTIL_STEPS = new Set(["tools"]);
@@ -4956,8 +4956,9 @@ function wireTools(today){
     $("calcSub").innerHTML = CALC.op?esc(fmtNum(CALC.prev||0,2,GM())+" "+OPN[CALC.op]):"&nbsp;";
     $("calcMain").textContent = fmtNum(calcNum(), Math.min(6,(CALC.cur.split(".")[1]||"").length), GM());
   };
-  document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{ calcKey(b.dataset.k); redrawCalc(); });
-  document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{
+  const panel=$("toolsBody");
+  panel.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{ calcKey(b.dataset.k); redrawCalc(); });
+  panel.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{
     const v=calcNum(), t=b.dataset.t;
     if(t==="add") TAPE.push({v:r2(v), note:"add"});
     else if(t==="sub") TAPE.push({v:r2(-v), note:"subtract"});
@@ -5002,9 +5003,9 @@ function wireTools(today){
       <div style="color:var(--muted);font-size:12px">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][ad.getUTCDay()]}</div>`);
     if($("cvBs")) $("cvBs").value=y+"."+String(mo).padStart(2,"0")+"."+String(d).padStart(2,"0");
     if($("cvAd")) $("cvAd").value=iso;
-    document.querySelectorAll(".cell[data-iso]").forEach(c=>c.classList.toggle("sel", c.dataset.iso===iso));
+    panel.querySelectorAll(".cell[data-iso]").forEach(c=>c.classList.toggle("sel", c.dataset.iso===iso));
   };
-  document.querySelectorAll(".cell[data-day]").forEach(c=>c.onclick=()=>pick(CALV.y,CALV.m,+c.dataset.day));
+  panel.querySelectorAll(".cell[data-day]").forEach(c=>c.onclick=()=>pick(CALV.y,CALV.m,+c.dataset.day));
   const tb0=ad2bs(today);
   if(CALV.sel){ const b=ad2bs(new Date(CALV.sel+"T00:00:00Z")); if(b) pick(b.y,b.m,b.d); }
   else if(tb0) pick(tb0.y,tb0.m,tb0.d);
