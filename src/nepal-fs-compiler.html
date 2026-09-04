@@ -61,9 +61,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .step{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:5px;background:none;border:0;text-align:left;cursor:pointer;color:rgba(255,255,255,.72);font-size:13.5px;font-weight:500;width:100%;transition:background .12s,color .12s}
 .step:hover{background:rgba(255,255,255,.07);color:#fff}
 .step[aria-current="true"]{background:rgba(255,255,255,.13);color:#fff}
-.step-n{font-family:var(--mono);font-size:10.5px;width:17px;height:17px;flex:none;display:grid;place-items:center;border:1px solid rgba(255,255,255,.28);border-radius:50%;color:rgba(255,255,255,.6)}
-.step[aria-current="true"] .step-n{border-color:rgba(255,255,255,.75);color:#fff}
-.step.done .step-n{background:rgba(255,255,255,.9);border-color:transparent;color:var(--green)}
+.step-n{font-family:var(--mono);font-size:10.5px;width:18px;height:18px;flex:none;display:grid;place-items:center;border:0;border-radius:50%;background:rgba(255,255,255,.92);color:#123C31;font-weight:600}
+.step[aria-current="true"] .step-n{background:#fff;color:#0F1310}
+.step.done::after{content:"";width:6px;height:6px;border-radius:50%;background:#8FD3B6;margin-left:auto;flex:none}
 .rail-foot{padding:14px 16px 18px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:rgba(255,255,255,.45);line-height:1.45}
 .fw-chip{display:block;font-size:11.5px;color:#fff;font-weight:600;letter-spacing:.02em;margin-bottom:5px}
 
@@ -222,8 +222,6 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
 }
 
 .step-sep{height:1px;background:rgba(255,255,255,.12);margin:10px 10px 8px}
-.step-n.util{border-style:dashed;font-size:12px}
-.step.util{color:rgba(255,255,255,.6)}
 .calcwrap{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:760px){.calcwrap{grid-template-columns:1fr}}
 .calcdisp{background:var(--surface-3);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;text-align:right;margin-bottom:12px}
@@ -1083,7 +1081,7 @@ const DEF = () => ({
   tb:[], ppe:[], intan:[], dt:[], pools:[], fi:{cat:[],hier:[],aging:[],mat:[]},
   taxAdd:[], taxLess:[], taxOther:{rebate:0,fees:0,tds:0,advance:0,exempt:0},
   cf:{}, soce:{openPY:{}, movPY:[], movCY:[]}, policies:"", extra:{},
-  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[], noteText:{}, fin:{on:false, lines:{}, labels:{}}
+  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[], noteText:{}, fin:{on:false, lines:{}, labels:{}, extra:[]}
 });
 let S = DEF();
 let onlyUnmapped = false;
@@ -1096,7 +1094,7 @@ function restore(){ try{ const raw=localStorage.getItem(LSKEY); if(!raw) return 
   S.fi=Object.assign({cat:[],hier:[],aging:[],mat:[]},o.fi||{}); S.soce=Object.assign({openPY:{},movPY:[],movCY:[]},o.soce||{});
   S.taxOther=Object.assign({rebate:0,fees:0,tds:0,advance:0,exempt:0},o.taxOther||{});
   S.coa=Object.assign({rules:[],captions:{}},o.coa||{}); S.learned=o.learned||{};
-  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; S.fin=Object.assign({on:false,lines:{},labels:{}},o.fin||{}); return true; }catch(e){ return false; } }
+  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; S.fin=Object.assign({on:false,lines:{},labels:{},extra:[]},o.fin||{}); S.fin.extra=S.fin.extra||[]; return true; }catch(e){ return false; } }
 
 let toastT;
 function toast(msg, err){ const t=$("toast"); t.textContent=msg; t.className="toast"+(err?" err":""); t.hidden=false;
@@ -1167,11 +1165,9 @@ function buildSteps(){
      divider without a number rather than being a step that never completes. */
   let n=0;
   $("steps").innerHTML = STEPS.map(s=>{
-    if(UTIL_STEPS.has(s.id))
-      return `<div class="step-sep"></div><button class="step util" data-step="${s.id}">
-        <span class="step-n util">&#9678;</span><span>${esc(s.label)}</span></button>`;
     n++;
-    return `<button class="step" data-step="${s.id}"><span class="step-n">${n}</span><span>${esc(s.label)}</span></button>`;
+    const sep = UTIL_STEPS.has(s.id) ? '<div class="step-sep"></div>' : "";
+    return `${sep}<button class="step" data-step="${s.id}"><span class="step-n">${n}</span><span>${esc(s.label)}</span></button>`;
   }).join("");
   $("steps").querySelectorAll(".step").forEach(b=>b.onclick=()=>nav(b.dataset.step));
 }
@@ -1208,8 +1204,9 @@ function markSteps(){
     audit: !!(mm && mm.checks.every(c=>c.ok)),
     exp:   !!(mm && Math.abs(mm.tot.sofpDiff)<=tol && t.unmapped===0)
   };
+  /* Progress is shown by the tick beside the label, not by changing the circle,
+     so the numbers all read the same weight down the rail. */
   $("steps").querySelectorAll(".step").forEach(b=>{
-    if(UTIL_STEPS.has(b.dataset.step)) return;
     b.classList.toggle("done", !!done[b.dataset.step]);
   });
 }
@@ -1921,6 +1918,16 @@ function compute(){
   noncash = r2(noncash);
   const invIncome = r2(fiC + (cy.oi_div||0));
   const cfRows=[];
+  /* Lines you have added yourself, placed at the exact point of the statement you
+     chose. A negative figure is an outflow, matching how the derived lines read. */
+  const putOther = (place, fallback)=>{
+    let t=0;
+    (o.other||[]).filter(x=>(x.sec||"O")===place && (String(x.label||"").trim() || num(x.amt)))
+      .forEach(x=>{ const v=r2(num(x.amt));
+        cfRows.push(R("item", x.label||fallback, v, null));
+        cfRows[cfRows.length-1].added=true; t+=v; });
+    return r2(t);
+  };
   const cTot=(label,c,p,cls,meta)=>{ const row=R("tot",label,c,p,"",cls||"");
     Object.assign(row, meta||{}); cfRows.push(row); return cfRows.length-1; };
   cfRows.push(R("sec","Cash flows from operating activities"));
@@ -1940,10 +1947,11 @@ function compute(){
       catFor(fw).filter(c=>c.grp==="FININC").map(c=>({id:c.id,k:-1})).concat([{id:"oi_div",k:-1}])]);
   const adjFrom=cfRows.length;
   adjLines.forEach(l=>{ cfRows.push(R("item",l[0],l[1],l[2])); cfRows[cfRows.length-1].cfSrc=l[3]; });
+  const cfAdjO = putOther("O-adj","Other adjustment");
   const adjTo=cfRows.length-1;
   const opBeforeWC = r2(pbtC + noncash + finC - invIncome);
   const opBeforeWCP = r2(pbtP + (function(){let s=0;for(const c of catFor(fw)) if(c.cf==="noncash"){const e=c.grp==="OPEX"||c.grp==="COS"||c.grp==="FIN"; s+=(e?1:-1)*(py[c.id]||0);} return r2(s);})() + finP - r2(fiP+(py.oi_div||0)));
-  const iCfOpBefore=cTot("Operating profit before working capital changes",opBeforeWC,opBeforeWCP,"",
+  const iCfOpBefore=cTot("Operating profit before working capital changes",r2(opBeforeWC+cfAdjO),opBeforeWCP,"",
     {add:[iCfPbt], from:adjFrom<=adjTo?adjFrom:null, to:adjTo});
   cfRows.push(R("sub","Changes in working capital:"));
   const wcFrom=cfRows.length; let wc=0;
@@ -1957,8 +1965,9 @@ function compute(){
     wc += d;
   }
   wc = r2(wc);
+  const cfWcO = putOther("O-wc","Other working capital movement");
   const wcTo=cfRows.length-1;
-  const cashGen = r2(opBeforeWC + wc);
+  const cashGen = r2(opBeforeWC + cfAdjO + wc + cfWcO);
   const iCfGen=cTot("Cash generated from operations",cashGen,null,"",
     {add:[iCfOpBefore], from:wcFrom<=wcTo?wcFrom:null, to:wcTo});
   const opTailFrom=cfRows.length;
@@ -1969,10 +1978,7 @@ function compute(){
   const intInFin = o.intClass === "F";
   if(Math.abs(intPaid)>EPS && !intInFin){ cfRows.push(R("item","Interest paid",-intPaid,null)); cfRows[cfRows.length-1].inp={k:"intPaid",neg:1}; }
   if(Math.abs(taxPaid)>EPS){ cfRows.push(R("item","Income taxes paid",-taxPaid,null)); cfRows[cfRows.length-1].inp={k:"taxPaid",neg:1}; }
-  const cfOtherO = (o.other||[]).filter(x=>x.sec==="O").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="O" && (String(x.label||"").trim() || num(x.amt)))
-    .forEach(x=>{ cfRows.push(R("item",x.label||"Other operating item",num(x.amt),null));
-      cfRows[cfRows.length-1].added=true; });
+  const cfOtherO = putOther("O","Other operating item") + putOther("O-tail","Other operating item");
   const opTailTo=cfRows.length-1;
   const netOp = r2(cashGen - (intInFin?0:intPaid) - taxPaid + cfOtherO);
   const iCfOp=cTot("Net cash generated from / (used in) operating activities",netOp,null,"",
@@ -1994,10 +2000,7 @@ function compute(){
   if(Math.abs(dispInv)>EPS){ cfRows.push(R("item","Proceeds from disposal of investments",dispInv,null)); cfRows[cfRows.length-1].inp={k:"dispInv"}; }
   if(Math.abs(intRecv)>EPS){ cfRows.push(R("item","Interest received",intRecv,null)); cfRows[cfRows.length-1].inp={k:"intRecv"}; }
   if(Math.abs(divRecv)>EPS){ cfRows.push(R("item","Dividends received",divRecv,null)); cfRows[cfRows.length-1].inp={k:"divRecv"}; }
-  const cfOtherI = (o.other||[]).filter(x=>x.sec==="I").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="I" && (String(x.label||"").trim() || num(x.amt)))
-    .forEach(x=>{ cfRows.push(R("item",x.label||"Other investing item",num(x.amt),null));
-      cfRows[cfRows.length-1].added=true; });
+  const cfOtherI = putOther("I","Other investing item");
   const invTo=cfRows.length-1;
   const netInv = r2(-ppeCash - intanAdd + dispPpe + invMove + dispInv + intRecv + divRecv + cfOtherI);
   const iCfInv=cTot("Net cash generated from / (used in) investing activities",netInv,null,"",
@@ -2015,10 +2018,7 @@ function compute(){
   if(Math.abs(leasePaid)>EPS){ cfRows.push(R("item","Payment of lease liabilities",-leasePaid,null)); cfRows[cfRows.length-1].inp={k:"leasePaid",neg:1}; }
   if(intInFin && Math.abs(intPaid)>EPS){ cfRows.push(R("item","Interest paid",-intPaid,null)); cfRows[cfRows.length-1].inp={k:"intPaid",neg:1}; }
   if(Math.abs(divPaid)>EPS){ cfRows.push(R("item","Dividends paid",-divPaid,null)); cfRows[cfRows.length-1].inp={k:"divPaid",neg:1}; }
-  const cfOtherF = (o.other||[]).filter(x=>x.sec==="F").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="F" && (String(x.label||"").trim() || num(x.amt)))
-    .forEach(x=>{ cfRows.push(R("item",x.label||"Other financing item",num(x.amt),null));
-      cfRows[cfRows.length-1].added=true; });
+  const cfOtherF = putOther("F","Other financing item");
   const finTo=cfRows.length-1;
   const netFin = r2(eqIssue + borrowMove - leasePaid - (intInFin?intPaid:0) - divPaid + cfOtherF);
   const iCfFin=cTot("Net cash generated from / (used in) financing activities",netFin,null,"",
@@ -2655,7 +2655,17 @@ function renderFs(){
           <input id="cfNewLabel" placeholder="Add a line, for example Dividends paid"
             style="min-width:260px;padding:6px 9px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
           <select id="cfNewSec" style="padding:6px 8px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
-            <option value="O">Operating</option><option value="I">Investing</option><option value="F">Financing</option>
+            <option value="O-adj">Operating: with the adjustments, above operating profit</option>
+            <option value="O-wc">Operating: with the working capital changes</option>
+            <option value="O-tail">Operating: after cash generated from operations</option>
+            <option value="I">Investing activities</option>
+            <option value="F">Financing activities</option>
+          </select>
+          <input id="cfNewAmt" placeholder="This year, blank for nil"
+            style="width:170px;padding:6px 9px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink);text-align:right;font-family:var(--mono);font-size:12.5px">
+          <select id="cfNewSign" style="padding:6px 8px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
+            <option value="out">Outflow, shown in brackets</option>
+            <option value="in">Inflow</option>
           </select>
           <button class="btn sm pri" id="cfNewAdd">Add line</button></span>`:""}
         <span class="hint">${showPY&&!cfPY
@@ -2683,9 +2693,14 @@ function renderFs(){
     S.cf.other=S.cf.other||[];
     if(S.cf.other.some(x=>String(x.label||"").trim().toLowerCase()===lab.toLowerCase())){
       toast("There is already a line called that.", true); return; }
-    S.cf.other.push({label:lab, sec:($("cfNewSec")||{}).value||"O", amt:0});
+    const raw=num((($("cfNewAmt")||{}).value)||0);
+    const outflow=((($("cfNewSign")||{}).value)||"out")==="out";
+    /* the sign is taken from the choice, so a figure typed either way lands correctly */
+    const amt=raw ? (outflow ? -Math.abs(raw) : Math.abs(raw)) : 0;
+    S.cf.other.push({label:lab, sec:($("cfNewSec")||{}).value||"O-tail", amt});
     persist(); renderFs();
-    toast('"'+lab+'" added. Type its comparative in the column on the right.');
+    toast('"'+lab+'" added'+(amt?" at "+dispRaw(amt):" with this year nil")+
+      '. Type its comparative in the column on the right.');
   };
   document.querySelectorAll("[data-cfdel]").forEach(b=>b.onclick=()=>{
     const lab=b.dataset.cfdel;
@@ -5076,6 +5091,30 @@ function recalcTotals(rows){
     const p=calc(1); if(p!==null) r.py=p;
   });
 }
+/* A line you have added to a statement. It is spliced in just inside the subtotal
+   you anchored it to, and every index the totals hold is shifted to match, so the
+   subtotal, the totals above it and the workbook all pick the new line up. */
+function insertExtraRows(stmt, rows){
+  const extras=((S.fin||{}).extra||[]).filter(x=>x.stmt===stmt && String(x.label||"").trim());
+  for(const x of extras){
+    const ti=rows.findIndex(r=>r.type==="tot" && r.label===x.anchor);
+    if(ti<0) continue;
+    const t=rows[ti];
+    const p=(t.to!==null && t.to!==undefined) ? t.to+1 : ti;
+    rows.splice(p, 0, {type:"item", label:x.label, note:"", cls:"", extra:true,
+      cy:r2(num(x.cy)),
+      py:(x.py===""||x.py===null||x.py===undefined) ? null : r2(num(x.py))});
+    rows.forEach(r=>{
+      if(r.add) r.add=r.add.map(j=>j>=p?j+1:j);
+      if(r.sub) r.sub=r.sub.map(j=>j>=p?j+1:j);
+      if(r.from!==null && r.from!==undefined && r.from>=p) r.from++;
+      if(r.to!==null && r.to!==undefined && r.to>=p) r.to++;
+    });
+    const t2=rows.find(r=>r.type==="tot" && r.label===x.anchor);
+    if(t2){ if(t2.from===null||t2.from===undefined) t2.from=p;
+            if(t2.to===null||t2.to===undefined||t2.to<p) t2.to=p; }
+  }
+}
 function applyFinal(m){
   if(!finOn()) return m;
   const ov=(S.fin.lines)||{}, lb=(S.fin.labels)||{};
@@ -5089,6 +5128,8 @@ function applyFinal(m){
       if(p!==undefined && p!=="" && p!==null){ r.py=r2(num(p)); if(r.type==="tot") r.finFixed=true; }
     });
   };
+  insertExtraRows("PL", m.plRows);
+  insertExtraRows("SOFP", m.sofpRows);
   put("PL", m.plRows);
   recalcTotals(m.plRows);
   /* the result for the year feeds equity, so carry any change to it across */
@@ -5102,8 +5143,24 @@ function applyFinal(m){
     }
     m.tot.pftC=pf.cy; m.tot.pftP=pf.py;
   }
+  /* Carry the adjusted statement back into the summary figures, otherwise the tax
+     computation, the ratios and materiality would still be reading the prepared
+     numbers while the statements showed something else. */
+  const pick=(rows,re)=>rows.find(r=>r.type==="tot" && re.test(r.label||""));
+  const setT=(key,row)=>{ if(row){ m.tot[key]=row.cy;
+    if(row.py!==null && row.py!==undefined) m.tot[key.replace(/C$/,"P")]=row.py; } };
+  setT("revC", pick(m.plRows,/^Revenue$|^Total income$/i));
+  setT("gpC",  pick(m.plRows,/^Gross profit$/i));
+  setT("opC",  pick(m.plRows,/^Operating profit/i));
+  setT("pbtC", pick(m.plRows,/before tax$/i));
+  setT("tciC", pick(m.plRows,/^Total comprehensive income/i));
   put("SOFP", m.sofpRows); recalcTotals(m.sofpRows);
   put("CF", m.cfRows);     recalcTotals(m.cfRows);
+  setT("eqTotC", pick(m.sofpRows,/^Total (equity|fund balances)$/i));
+  setT("nclC",   pick(m.sofpRows,/^Total non-current liabilities$/i));
+  setT("clC",    pick(m.sofpRows,/^Total current liabilities$/i));
+  setT("ncaC",   pick(m.sofpRows,/^Total non-current assets$/i));
+  setT("caC",    pick(m.sofpRows,/^Total current assets$/i));
   const ta=m.sofpRows.find(r=>/^TOTAL ASSETS$/i.test(r.label));
   const tl=m.sofpRows.find(r=>/^TOTAL (EQUITY AND LIABILITIES|FUNDS AND LIABILITIES)$/i.test(r.label));
   if(ta&&tl){ m.tot.assetsC=ta.cy; m.tot.assetsP=ta.py;
@@ -5192,8 +5249,38 @@ function renderFin(){
       ${showPY?cell("py", r.py, fr.py):""}
       <td>${chg?`<button class="rowdel" data-finrev="${esc(k)}" title="Revert this line">&#8630;</button>`:""}</td></tr>`;
   });
-  h+=`</tbody></table></div></div>
-    <p class="hint" style="margin-top:12px">Leave a box empty to keep the prepared figure. Change a line and the subtotals above and below it recompute, so the statement still adds up. Change the result for the year and it carries into equity.</p>`;
+  h+=`</tbody></table></div></div>`;
+  if(curFin==="SOFP" || curFin==="PL"){
+    const tots=rowsP.filter(r=>r.type==="tot").map(r=>r.label);
+    h+=`<div class="card"><h3>Add a line to this statement</h3>
+      <div class="grid-f">
+        <label class="f">Description<input id="exLabel" placeholder="for example Prior period adjustment"></label>
+        <label class="f">Include it within<select id="exAnchor">${
+          tots.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}</select></label>
+        <label class="f">${esc(S.meta.cyLabel||"This year")}<input id="exCy" placeholder="blank for nil" style="text-align:right;font-family:var(--mono)"></label>
+        ${showPY?`<label class="f">${esc(S.meta.pyLabel||"Comparative")}<input id="exPy" placeholder="blank for nil" style="text-align:right;font-family:var(--mono)"></label>`:""}
+        <label class="f">This is<select id="exSign"><option value="in">A positive amount</option><option value="out">A negative amount, shown in brackets</option></select></label>
+      </div>
+      <div class="btnrow" style="margin-top:12px"><button class="btn pri" id="exAdd">Add the line</button></div>
+      ${(S.fin.extra||[]).filter(x=>x.stmt===curFin).length?`
+      <div class="gwrap" style="max-height:none;margin-top:14px"><table class="g"><thead><tr>
+        <th style="min-width:280px">Line you added</th><th style="min-width:240px">Inside</th>
+        <th class="num">${esc(S.meta.cyLabel||"This year")}</th>${showPY?`<th class="num">${esc(S.meta.pyLabel||"Prior")}</th>`:""}
+        <th style="width:34px"></th></tr></thead><tbody>${
+        (S.fin.extra||[]).map((x,i)=>({x,i})).filter(o=>o.x.stmt===curFin).map(o=>
+          `<tr><td style="padding:6px 9px">${esc(o.x.label)}</td>
+            <td style="padding:6px 9px;color:var(--muted)">${esc(o.x.anchor)}</td>
+            <td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px">${dispRaw(num(o.x.cy))}</td>
+            ${showPY?`<td class="num" style="padding:6px 9px;font-family:var(--mono);font-size:12.5px">${o.x.py===""||o.x.py==null?"":dispRaw(num(o.x.py))}</td>`:""}
+            <td><button class="rowdel" data-exdel="${o.i}">&times;</button></td></tr>`).join("")
+      }</tbody></table></div>`:""}
+    </div>`;
+  } else if(curFin==="CF"){
+    h+=`<div class="card"><h3>Adding a cash flow line</h3>
+      <p class="hint">A cash flow line is added on the statement itself, so it can be placed at the exact point of the working it belongs to. Open the Financial statements step, choose Cash Flows, then Enter comparative figures.</p>
+      <div class="btnrow"><button class="btn" id="finGoCf">Open the cash flow statement</button></div></div>`;
+  }
+  h+=`<p class="hint" style="margin-top:12px">Leave a box empty to keep the prepared figure. Change a line and the subtotals above and below it recompute, so the statement still adds up. Change the result for the year and it carries into equity.</p>`;
   $("finBody").innerHTML=h; wireFin();
 }
 function wireFin(){
@@ -5211,6 +5298,22 @@ function wireFin(){
     const k=el.dataset.finlbl;
     if(String(el.value).trim()==="") delete S.fin.labels[k]; else S.fin.labels[k]=el.value;
     persist(); });
+  if($("finGoCf")) $("finGoCf").onclick=()=>{ curFsView="CF"; nav("fs"); };
+  if($("exAdd")) $("exAdd").onclick=()=>{
+    const lab=String(($("exLabel")||{}).value||"").trim();
+    if(!lab){ toast("Give the line a description first.", true); return; }
+    const out=((($("exSign")||{}).value)||"in")==="out";
+    const sign=v=>{ const n=num(v); return n ? (out?-Math.abs(n):Math.abs(n)) : 0; };
+    const cyRaw=(($("exCy")||{}).value||"").trim(), pyRaw=(($("exPy")||{}).value||"").trim();
+    S.fin.extra=S.fin.extra||[];
+    S.fin.extra.push({stmt:curFin, anchor:($("exAnchor")||{}).value||"", label:lab,
+      cy:sign(cyRaw), py:pyRaw===""?"":sign(pyRaw)});
+    if(!S.fin.on){ S.fin.on=true; toast('"'+lab+'" added, and the finalised version is now the one shown and exported.'); }
+    else toast('"'+lab+'" added.');
+    persist(); renderFin(); refreshChrome();
+  };
+  document.querySelectorAll("[data-exdel]").forEach(b=>b.onclick=()=>{
+    S.fin.extra.splice(+b.dataset.exdel,1); persist(); renderFin(); toast("Line removed."); });
   document.querySelectorAll("[data-finrev]").forEach(b=>b.onclick=()=>{
     const k=b.dataset.finrev;
     delete S.fin.labels[k]; delete S.fin.lines[k+"|cy"]; delete S.fin.lines[k+"|py"];
