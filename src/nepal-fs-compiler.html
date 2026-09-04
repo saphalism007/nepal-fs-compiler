@@ -115,7 +115,7 @@ table.g th{position:sticky;top:0;z-index:5;background:var(--surface-3);text-alig
 table.g td{padding:0;border-bottom:1px solid var(--rule-2);vertical-align:middle}
 table.g tbody tr:hover td{background:var(--surface-2)}
 table.g td.num,table.g th.num{text-align:right;font-variant-numeric:tabular-nums}
-table.g input,table.g select{width:100%;min-width:0;border:0;background:transparent;padding:6px 9px;font-size:13px;color:inherit;border-radius:0;text-overflow:ellipsis}
+table.g input,table.g select{width:100%;min-width:0;border:0;background:transparent;padding:6px 9px;font-size:13px;color:inherit;border-radius:0}
 table.g input:focus{text-overflow:clip}
 table.g input:focus,table.g select:focus{outline:none;background:var(--green-wash);box-shadow:inset 0 0 0 1px var(--green-2)}
 table.g input.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
@@ -1318,18 +1318,25 @@ function renderTb(){
 
   const rows = onlyUnmapped ? S.tb.filter(r=>!r.map) : S.tb;
   const opts = mapOptions();
-  const head = `<thead><tr><th style="width:88px">Code</th><th style="min-width:340px">Ledger account</th>
+  /* Width the text columns to their longest entry rather than a guess, so a long
+     ledger name is shown in full; the grid then slides sideways inside its frame. */
+  const px = (n,min,max)=>Math.max(min, Math.min(max, Math.round(n*7.4)+30));
+  const longest = a => a.reduce((x,v)=>Math.max(x,String(v||"").length),0);
+  const wCode = px(longest(S.tb.map(r=>r.code)), 84, 200);
+  const wName = px(longest(S.tb.map(r=>r.name)), 260, 820);
+  const wLine = px(longest(S.tb.map(r=>(CATBY[r.map]||{}).label||"— unmapped —")), 260, 620);
+  const head = `<thead><tr><th style="min-width:${wCode}px">Code</th><th style="min-width:${wName}px">Ledger account</th>
     <th class="num" style="width:118px">Debit</th><th class="num" style="width:118px">Credit</th>
     <th class="num" style="width:118px">${esc(S.meta.pyLabel||"PY")} Dr</th><th class="num" style="width:118px">${esc(S.meta.pyLabel||"PY")} Cr</th>
-    <th style="min-width:300px">Financial statement line</th><th style="width:34px"></th></tr></thead>`;
+    <th style="min-width:${wLine}px">Financial statement line</th><th style="width:34px"></th></tr></thead>`;
   const body = rows.map(r=>`<tr data-id="${r.id}" class="${r.map?"":"unmapped"}">
-    <td><input class="code" data-k="code" value="${esc(r.code)}"></td>
-    <td><input data-k="name" value="${esc(r.name)}" title="${esc(r.name)}"></td>
+    <td style="min-width:${wCode}px"><input class="code" data-k="code" value="${esc(r.code)}"></td>
+    <td style="min-width:${wName}px"><input data-k="name" value="${esc(r.name)}" title="${esc(r.name)}"></td>
     <td><input class="num" data-k="dr" value="${r.dr?fmtNum(r.dr,2,"intl"):""}"></td>
     <td><input class="num" data-k="cr" value="${r.cr?fmtNum(r.cr,2,"intl"):""}"></td>
     <td><input class="num" data-k="pdr" value="${r.pdr?fmtNum(r.pdr,2,"intl"):""}"></td>
     <td><input class="num" data-k="pcr" value="${r.pcr?fmtNum(r.pcr,2,"intl"):""}"></td>
-    <td><select data-k="map">${opts}</select></td>
+    <td style="min-width:${wLine}px"><select data-k="map" title="${esc((CATBY[r.map]||{}).label||"unmapped")}">${opts}</select></td>
     <td><button class="rowdel" data-del="1" title="Delete row">×</button></td></tr>`).join("");
   const foot = `<tr class="totrow"><td></td><td style="padding:7px 9px">Total${onlyUnmapped?" (all ledgers)":""}</td>
     <td class="num">${dispRaw(t.dr)}</td><td class="num">${dispRaw(t.cr)}</td>
@@ -3942,6 +3949,41 @@ function printAll(){
   window.addEventListener("afterprint",done);
   setTimeout(()=>{ try{ window.print(); }catch(e){} setTimeout(done, 1500); }, 150);
 }
+</script>
+
+<script>
+/* ---------- 30. NEVER RUN A STALE BUILD ----------
+   A cached copy of the app once kept serving after a correction had shipped.
+   Compare the running build against the one on the server and reload once if
+   they differ. Guarded by sessionStorage so it can never loop. */
+(function(){
+  if(!/^https?:$/.test(location.protocol)) return;
+  const running = (window.__BUILD__||"dev");
+  const check = async ()=>{
+    try{
+      const r = await fetch(location.pathname.replace(/[^\/]*$/,"")+"index.html",
+        {cache:"no-store", headers:{"Cache-Control":"no-cache"}});
+      if(!r.ok) return;
+      const t = await r.text();
+      const m = t.match(/__BUILD__\s*=\s*"([a-z0-9]+)"/);
+      if(!m || m[1]===running) return;
+      if(sessionStorage.getItem("nfs-reloaded")===m[1]) return;   /* already tried */
+      sessionStorage.setItem("nfs-reloaded", m[1]);
+      if(window.caches) for(const k of await caches.keys()) if(k.startsWith("nepal-fs-")) await caches.delete(k);
+      if(navigator.serviceWorker){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for(const g of regs) if(g.scope.includes("/nepal-fs-compiler/")) await g.update();
+      }
+      location.reload();
+    }catch(e){}
+  };
+  if(document.readyState==="complete") setTimeout(check,600);
+  else addEventListener("load", ()=>setTimeout(check,600));
+  if(navigator.serviceWorker) navigator.serviceWorker.addEventListener("controllerchange", ()=>{
+    if(sessionStorage.getItem("nfs-swreload")) return;
+    sessionStorage.setItem("nfs-swreload","1"); location.reload();
+  });
+})();
 </script>
 
 <script>

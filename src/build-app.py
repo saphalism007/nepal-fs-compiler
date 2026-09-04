@@ -50,6 +50,7 @@ if("serviceWorker" in navigator){
 })();
 </script>'''
 
+body_src = body_src.replace("<script>", "<script>window.__BUILD__=\"%s\";</script>\n<script>" % ver, 1)
 doc = ("<!doctype html>\n<html lang=\"en\">\n<head>\n"
        "<meta charset=\"utf-8\">\n"
        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n"
