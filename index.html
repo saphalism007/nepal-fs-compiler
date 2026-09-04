@@ -128,7 +128,8 @@ table.g th{position:sticky;top:0;z-index:5;background:var(--surface-3);text-alig
 table.g td{padding:0;border-bottom:1px solid var(--rule-2);vertical-align:middle}
 table.g tbody tr:hover td{background:var(--surface-2)}
 table.g td.num,table.g th.num{text-align:right;font-variant-numeric:tabular-nums}
-table.g input,table.g select{width:100%;border:0;background:transparent;padding:6px 9px;font-size:13px;color:inherit;border-radius:0}
+table.g input,table.g select{width:100%;min-width:0;border:0;background:transparent;padding:6px 9px;font-size:13px;color:inherit;border-radius:0;text-overflow:ellipsis}
+table.g input:focus{text-overflow:clip}
 table.g input:focus,table.g select:focus{outline:none;background:var(--green-wash);box-shadow:inset 0 0 0 1px var(--green-2)}
 table.g input.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12.5px}
 table.g input.code{font-family:var(--mono);font-size:12.5px}
@@ -156,12 +157,20 @@ table.g tr.unmapped td{background:var(--ochre-wash)}
 .sheet-hd .stmt{font-family:var(--serif);font-size:16px;font-weight:600;margin-top:16px}
 .sheet-hd .per{font-size:12.5px;color:var(--ink-2);margin-top:2px}
 .sheet-units{display:flex;justify-content:flex-end;font-size:11px;color:var(--muted);font-style:italic;margin:18px 0 4px}
-table.fs{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+/* Nothing is ever allowed to be cut off. Any table that cannot fit its longest
+   caption or figure scrolls sideways inside its own container. */
+.scrollx{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;max-width:100%}
+.scrollx::-webkit-scrollbar{height:10px}
+.scrollx::-webkit-scrollbar-thumb{background:var(--rule-strong);border-radius:5px}
+.scrollx::-webkit-scrollbar-track{background:var(--surface-3);border-radius:5px}
+table.fs{width:100%;min-width:600px;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+table.fs td.l{min-width:290px}
 table.fs th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 0 7px;border-bottom:1px solid var(--rule-strong);text-align:right;white-space:nowrap}
 table.fs th.l{text-align:left}
 table.fs th.c{text-align:center}
 table.fs td{padding:3.5px 0;vertical-align:baseline}
-table.fs td.n{text-align:right;padding-left:22px;white-space:nowrap;min-width:104px}
+table.fs td.n{text-align:right;padding-left:22px;white-space:nowrap;min-width:116px}
+table.fs th{white-space:nowrap}
 table.fs td.note{text-align:center;color:var(--muted);font-size:11.5px;width:44px;padding-left:14px}
 table.fs tr.sec > td{font-weight:600;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--green-2);padding-top:18px;padding-bottom:5px}
 table.fs tr.sub > td{font-weight:600;padding-top:12px;padding-bottom:3px}
@@ -489,6 +498,9 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
         <label class="f">Existing ledgers<select id="impMode">
           <option value="replace">Replace everything</option>
           <option value="append">Add to what is there</option></select></label>
+        <label class="f">Opening balances are<select id="impOpen">
+          <option value="py">Last year's closing — use as comparatives</option>
+          <option value="ignore">Not comparatives — leave prior year blank</option></select></label>
       </div>
       <div id="impWarn" class="hint warn" style="margin-bottom:10px"></div>
       <div class="gwrap" style="max-height:46vh"><table class="g" id="impGrid"></table></div>
@@ -652,6 +664,8 @@ const CAT_RAW = [
 ["rev_disc","Discounts, returns and rebates","REV","opl","NFRS,SME,ME"],
 ["inc_grant_u","Grant income — unrestricted","REV","opl","NPO"],
 ["inc_grant_r","Grant income — restricted","REV","opl","NPO"],
+["inc_grant_e","Grant and contributions — endowment","REV","opl","NPO"],
+["inc_transfer","Transfer between funds","REV","na","NPO"],
 ["inc_donation","Donations and contributions","REV","opl","NPO"],
 ["inc_member","Membership and subscription fees","REV","opl","NPO"],
 ["inc_prog","Programme and service income","REV","opl","NPO"],
@@ -670,7 +684,8 @@ const CAT_RAW = [
 ["cos_chg","Changes in inventories of finished goods and work in progress","COS","opl","NFRS,SME,ME"],
 ["cos_direct","Direct and manufacturing expenses","COS","opl","NFRS,SME,ME"],
 ["cos_sub","Sub-contract and job work charges","COS","opl","NFRS,SME,ME"],
-["exp_prog","Programme and project expenses","OPEX","opl","NPO"],
+["exp_prog","Programme and project expenses — restricted","OPEX","opl","NPO"],
+["exp_prog_u","Programme and project expenses — unrestricted","OPEX","opl","NPO"],
 ["exp_fundraise","Fundraising expenses","OPEX","opl","NPO"],
 ["exp_emp","Employee benefits expense","OPEX","opl",ALL],
 ["exp_dep","Depreciation and amortisation expense","OPEX","noncash",ALL],
@@ -727,11 +742,11 @@ const GRP_LABEL = {
 <script>
 /* ---------- 3. AUTO-MAPPING DICTIONARY ---------- */
 const KW = {
-nca_ppe:["property plant","fixed asset","plant and machinery","plant & machinery","machinery","building","land","freehold","leasehold improve","furniture","fixture","office equipment","computer","laptop","printer","vehicle","motor car","motorcycle","scooter","bike","truck","generator","air condition","electrical installation","accumulated depreciation","acc. depreciation","acc dep","less: depreciation","tools and equipment","lab equipment","kitchen equipment","solar"],
+nca_ppe:["property plant","fixed asset","plant and machinery","plant & machinery","machinery","building","land","freehold","leasehold improve","furniture","fixture","office equipment","computer","laptop","printer","vehicle","motor car","motorcycle","scooter","bike","truck","generator","air condition","electrical installation","!accumulated depreciation","!accumulated dep","!accum depreciation","!acc depreciation","!acc dep","!less depreciation","!provision for depreciation","!depreciation reserve","!depreciation fund","tools and equipment","lab equipment","kitchen equipment","solar"],
 nca_cwip:["capital work in progress","capital work-in-progress","cwip","construction in progress","building under construction"],
 nca_rou:["right of use","right-of-use","rou asset"],
 nca_ip:["investment property"],
-nca_intan:["intangible","software","computer software","licence","license fee","trademark","patent","copyright","website development","erp"],
+nca_intan:["!accumulated amortisation","!accumulated amortization","!acc amortisation","!acc amortization","!acc amort","!less amortisation","intangible","software","computer software","licence","license fee","trademark","patent","copyright","website development","erp"],
 nca_gw:["goodwill"],
 nca_bio:["biological asset","livestock","plantation"],
 nca_sub:["investment in subsidiar"],
@@ -744,7 +759,7 @@ nca_ltloan:["security deposit","deposit with","earnest money","emd","long term l
 nca_dta:["deferred tax asset"],
 nca_other:["other non current asset","other non-current asset","preliminary expense","deferred revenue expenditure"],
 ca_inv:["inventor","stock in hand","closing stock","stock-in-trade","raw material","work in progress","work-in-progress","finished goods","consumable","packing material","spare part","goods in transit","stores and spares"],
-ca_tr:["trade receivable","allowance for doubtful","sundry debtor","debtors","accounts receivable","bills receivable","receivable from customer","provision for doubtful","provision for bad"],
+ca_tr:["trade receivable","!allowance for doubtful","!allowance for expected credit","!provision for doubtful debts account","sundry debtor","debtors","accounts receivable","bills receivable","receivable from customer","provision for doubtful","provision for bad"],
 ca_grant:["grant receivable","donation receivable","donor receivable","receivable from donor"],
 ca_contract_a:["contract asset","unbilled revenue","accrued revenue","retention receivable"],
 ca_or:["other receivable","interest receivable","income receivable","accrued interest"],
@@ -777,13 +792,13 @@ ncl_borrow:["term loan","long term loan","long-term borrowing","loan from bank",
 ncl_deb:["debenture","bond payable"],
 ncl_lease:["lease liability non current","lease liability - non","non current lease"],
 ncl_dtl:["deferred tax liabilit"],
-ncl_gratuity:["gratuity","defined benefit","retirement benefit","pension obligation"],
+ncl_gratuity:["!provision for gratuity","!gratuity payable","!gratuity fund","gratuity","defined benefit","retirement benefit","pension obligation"],
 ncl_leave:["leave encashment","leave provision","accumulated leave","home leave","sick leave"],
 ncl_prov:["long term provision","long-term provision"],
 ncl_defgrant:["deferred grant","deferred income","capital grant","government grant"],
 ncl_other:["other non current liabilit","other long term liabilit"],
 cl_tp:["trade payable","sundry creditor","creditors","accounts payable","bills payable","payable to supplier","payable to vendor"],
-cl_op:["other payable","accrued expense","outstanding expense","expenses payable","salary payable","wages payable","audit fee payable","rent payable","electricity payable","accrued liabilit"],
+cl_op:["other payable","accrued expense","outstanding expense","expenses payable","!salary payable","!salaries payable","!wages payable","!audit fee payable","!rent payable","!electricity payable","!telephone payable","!commission payable","!professional fee payable","!expenses outstanding","!outstanding liabilit","accrued liabilit"],
 cl_contract_l:["contract liabilit","deferred revenue","unearned revenue","billing in excess"],
 cl_advcust:["advance from customer","customer advance","advance received"],
 cl_unspent:["unspent grant","unutilised grant","refundable grant","grant payable to donor"],
@@ -791,9 +806,9 @@ cl_stborrow:["short term loan","short-term borrowing","working capital loan","ca
 cl_od:["overdraft","bank od"],
 cl_cpltd:["current portion of long","current portion","current maturit"],
 cl_lease_c:["lease liability current","lease liability - current","current lease liab"],
-cl_ctax:["provision for income tax","income tax payable","current tax liabilit","tax provision"],
+cl_ctax:["!provision for income tax","!provision for taxation","!income tax payable","!current tax liabilit","!tax provision"],
 cl_prov:["short term provision","provision for expense","provision for warranty"],
-cl_bonus:["staff bonus payable","bonus payable","provision for bonus","provision for staff bonus"],
+cl_bonus:["!staff bonus payable","!bonus payable","!provision for bonus","!provision for staff bonus"],
 cl_rel_to:["due to related","payable to director","loan from associate","due to holding","payable to group"],
 cl_stat:["tds payable","tax deducted at source","vat payable","output vat","social security fund","ssf payable","provident fund payable","pf payable","cit payable","citizen investment","statutory due","excise payable"],
 cl_div:["unpaid dividend","dividend payable","unclaimed dividend"],
@@ -803,8 +818,8 @@ rev_serv:["service income","service revenue","consultancy income","professional 
 rev_contract:["contract revenue","construction revenue","work certified"],
 rev_other_op:["other operating revenue","scrap sales","freight recovered","other operating income"],
 rev_disc:["sales return","discount allowed","rebate","sales discount"],
-inc_grant_u:["unrestricted grant","general grant","core funding"],
-inc_grant_r:["restricted grant","project grant","donor grant","grant income","grant received"],
+inc_grant_u:["!unrestricted grant","!general grant","!core funding","!untied grant","core funding"],
+inc_grant_r:["!restricted grant","!project grant","!donor restricted grant","!tied grant","project grant","donor grant","grant income","grant received"],
 inc_donation:["donation received","contribution received","public donation","individual giving"],
 inc_member:["membership fee","subscription income","membership subscription"],
 inc_prog:["programme income","program income","training income","service fee income","event income"],
@@ -822,7 +837,10 @@ cos_purchase:["purchase","purchases of stock","cost of goods","purchase return"]
 cos_chg:["changes in inventor","change in inventor","changes in stock","increase decrease in stock","opening stock"],
 cos_direct:["direct expense","factory expense","manufacturing expense","production expense","direct wages","direct labour","power and fuel","carriage inward","freight inward","custom duty","clearing and forwarding","octroi"],
 cos_sub:["sub contract","subcontract","job work","outsourcing charge"],
-exp_prog:["programme expense","program expense","project expense","project cost","field expense","beneficiary","community expense","activity cost"],
+exp_prog:["programme expense","program expense","project expense","project cost","field expense","beneficiary","community expense","activity cost","restricted programme"]
+,exp_prog_u:["unrestricted programme expense","own programme expense"]
+,inc_grant_e:["endowment grant","endowment contribution","corpus contribution","corpus donation"]
+,inc_transfer:["transfer between fund","inter fund transfer","fund transfer"],
 exp_fundraise:["fundraising","fund raising","donor relation"],
 exp_emp:["salary","salaries","wages","staff cost","employee benefit","bonus expense","provident fund","gratuity expense","staff welfare","medical expense staff","overtime","dashain allowance","festival allowance","social security fund expense","leave encashment expense","staff training"],
 exp_dep:["depreciation","amortisation","amortization","depreciation and amortisation"],
@@ -849,12 +867,22 @@ tax_def:["deferred tax expense","deferred tax charge","deferred tax income"],
 oci_reval:["revaluation gain","revaluation surplus for"],
 oci_dbp:["actuarial gain","actuarial loss","remeasurement of defined"],
 };
+/* Longest match alone is not enough: "Accumulated depreciation - buildings" contains
+   "depreciation", which is longer than "acc dep", so the balance would be booked to
+   the expense instead of being netted against the asset. A keyword written with a
+   leading "!" is decisive and outranks any longer ordinary match. Keywords are
+   normalised exactly as ledger names are, so punctuation in either does not matter. */
+const kwNorm = t => (" "+String(t).toLowerCase().replace(/[^a-z0-9&]+/g," ").trim()+" ").replace(/\s+/g," ");
 const KW_LIST = [];
-for(const id in KW) for(const k of KW[id]) KW_LIST.push([k, id, k.length]);
+for(const id in KW) for(const k of KW[id]){
+  const decisive = k.charAt(0)==="!";
+  const norm = kwNorm(decisive ? k.slice(1) : k).trim();
+  if(norm) KW_LIST.push([norm, id, (decisive?10000:0) + norm.length]);
+}
 KW_LIST.sort((a,b)=>b[2]-a[2]);
 
 function autoMapOne(name, fw){
-  const n = (" "+String(name||"").toLowerCase().replace(/[^a-z0-9&]+/g," ")+" ").replace(/\s+/g," ");
+  const n = kwNorm(name);
   const avail = new Set(catFor(fw).map(c=>c.id));
   /* KW_LIST is sorted longest-first, so the first hit is the most specific description of
      this ledger. Commit to it. Never fall through to a shorter keyword just because this
@@ -862,7 +890,7 @@ function autoMapOne(name, fw){
      (an accumulated amortisation balance matching "amortisation" as an expense, say).
      Where the framework has no such caption, keep the amount in the same group. */
   for(const [kw,id] of KW_LIST){
-    if(!(n.includes(" "+kw) || n.includes(kw+" ") || n.includes(kw))) continue;
+    if(!n.includes(kw)) continue;
     return avail.has(id) ? id : fallbackFor(id, fw);
   }
   return "";
@@ -1254,7 +1282,7 @@ function renderTb(){
     <th style="min-width:250px">Financial statement line</th><th style="width:34px"></th></tr></thead>`;
   const body = rows.map(r=>`<tr data-id="${r.id}" class="${r.map?"":"unmapped"}">
     <td><input class="code" data-k="code" value="${esc(r.code)}"></td>
-    <td><input data-k="name" value="${esc(r.name)}"></td>
+    <td><input data-k="name" value="${esc(r.name)}" title="${esc(r.name)}"></td>
     <td><input class="num" data-k="dr" value="${r.dr?fmtNum(r.dr,2,"intl"):""}"></td>
     <td><input class="num" data-k="cr" value="${r.cr?fmtNum(r.cr,2,"intl"):""}"></td>
     <td><input class="num" data-k="pdr" value="${r.pdr?fmtNum(r.pdr,2,"intl"):""}"></td>
@@ -1366,37 +1394,38 @@ document.addEventListener("click", e=>{
 /* ---------- 12. SCHEDULE DEFINITIONS ---------- */
 const N = (k,label,w)=>({k,label,t:"num",w:w||"98px"});
 const T = (k,label,w)=>({k,label,t:"text",w:w||"180px"});
-const C = (k,label,f,w)=>({k,label,t:"calc",f,w:w||"104px"});
+const C = (k,label,f,w,xf)=>({k,label,t:"calc",f,w:w||"104px",xf});
 
 const SCHEMA = {
 ppe:{ key:"ppe", rows:()=>S.ppe, blank:()=>({cls:"",opCost:0,add:0,disp:0,reval:0,opDep:0,dep:0,dispDep:0,imp:0}),
   note:"Closing carrying amount flows to the statement of financial position; the charge for the year feeds the cash flow statement and the tax computation.",
   cols:[T("cls","Class of asset","230px"),
     N("opCost","Cost — opening"),N("add","Additions"),N("disp","Disposals"),N("reval","Revaluation / adj."),
-    C("clCost","Cost — closing", r=>num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval)),
+    C("clCost","Cost — closing", r=>num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval), null, "B{r}+C{r}-D{r}+E{r}"),
     N("opDep","Acc. depn. — opening"),N("dep","Charge for the year"),N("dispDep","On disposals"),N("imp","Impairment"),
-    C("clDep","Acc. depn. — closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)),
-    C("nbvC","Carrying amount — closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp))),
-    C("nbvP","Carrying amount — opening", r=>num(r.opCost)-num(r.opDep))] },
+    C("clDep","Acc. depn. — closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp), null, "G{r}+H{r}-I{r}+J{r}"),
+    C("nbvC","Carrying amount — closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)), null, "F{r}-K{r}"),
+    C("nbvP","Carrying amount — opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}")] },
 intan:{ key:"intan", rows:()=>S.intan, blank:()=>({cls:"",opCost:0,add:0,disp:0,reval:0,opDep:0,dep:0,dispDep:0,imp:0}),
   note:"Amortisation is presented within depreciation and amortisation expense.",
   cols:[T("cls","Class of intangible asset","230px"),
     N("opCost","Cost — opening"),N("add","Additions"),N("disp","Disposals"),N("reval","Adjustment"),
     C("clCost","Cost — closing", r=>num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval)),
     N("opDep","Acc. amortisation — opening"),N("dep","Charge for the year"),N("dispDep","On disposals"),N("imp","Impairment"),
-    C("clDep","Acc. amortisation — closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)),
-    C("nbvC","Carrying amount — closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp))),
-    C("nbvP","Carrying amount — opening", r=>num(r.opCost)-num(r.opDep))] },
+    C("clDep","Acc. amortisation — closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp), null, "G{r}+H{r}-I{r}+J{r}"),
+    C("nbvC","Carrying amount — closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)), null, "F{r}-K{r}"),
+    C("nbvP","Carrying amount — opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}")] },
 dt:{ key:"dt", rows:()=>S.dt, blank:()=>({item:"",type:"A",carry:0,base:0,dtOp:0,toOci:0}),
   note:"Positive amounts are deferred tax liabilities; negative amounts are deferred tax assets. Rate taken from engagement setup.",
   cols:[T("item","Temporary difference","250px"),
     {k:"type",label:"Nature",t:"select",w:"150px",opts:[["A","Asset"],["L","Liability"],["X","Tax loss / credit"]]},
     N("carry","Carrying amount"),N("base","Tax base"),
-    C("temp","Taxable / (deductible) difference", r=> r.type==="L" ? num(r.base)-num(r.carry) : r.type==="X" ? -(num(r.carry)-num(r.base)) : num(r.carry)-num(r.base), "132px"),
-    C("dtCl","Deferred tax — closing", r=>{ const tp = r.type==="L"?num(r.base)-num(r.carry): r.type==="X"? -(num(r.carry)-num(r.base)) : num(r.carry)-num(r.base); return r2(tp*num(S.meta.dtrate)/100); }),
+    C("temp","Taxable / (deductible) difference", r=> r.type==="L" ? num(r.base)-num(r.carry) : r.type==="X" ? -(num(r.carry)-num(r.base)) : num(r.carry)-num(r.base), "132px",
+      'IF($B{r}="Liability",D{r}-C{r},IF($B{r}="Tax loss / credit",D{r}-C{r},C{r}-D{r}))'),
+    C("dtCl","Deferred tax — closing", r=>{ const tp = r.type==="L"?num(r.base)-num(r.carry): r.type==="X"? -(num(r.carry)-num(r.base)) : num(r.carry)-num(r.base); return r2(tp*num(S.meta.dtrate)/100); }, null, "E{r}*__DTRATE__"),
     N("dtOp","Deferred tax — opening"),N("toOci","Recognised in OCI"),
     C("toPl","Charge / (credit) to profit or loss", r=>{ const tp = r.type==="L"?num(r.base)-num(r.carry): r.type==="X"? -(num(r.carry)-num(r.base)) : num(r.carry)-num(r.base);
-      return r2(tp*num(S.meta.dtrate)/100 - num(r.dtOp) - num(r.toOci)); },"140px")] },
+      return r2(tp*num(S.meta.dtrate)/100 - num(r.dtOp) - num(r.toOci)); },"140px","F{r}-G{r}-H{r}")] },
 fiCat:{ key:"fiCat", rows:()=>S.fi.cat, blank:()=>({label:"",side:"A",cat:"AC",cyC:0,cyF:0,pyC:0,pyF:0}),
   cols:[T("label","Instrument","230px"),
     {k:"side",label:"Class",t:"select",w:"130px",opts:[["A","Financial asset"],["L","Financial liability"]]},
@@ -1411,26 +1440,27 @@ fiAge:{ key:"fiAge", rows:()=>S.fi.aging, blank:()=>({bucket:"",gross:0,rate:0})
   note:"Simplified approach to expected credit losses on trade receivables — lifetime ECL provision matrix.",
   cols:[T("bucket","Ageing bucket","200px"),N("gross","Gross carrying amount","130px"),
     {k:"rate",label:"Loss rate (%)",t:"num",w:"110px",nt:1},
-    C("ecl","Expected credit loss", r=>r2(num(r.gross)*num(r.rate)/100),"130px"),
-    C("net","Net carrying amount", r=>r2(num(r.gross)-num(r.gross)*num(r.rate)/100),"130px")] },
+    C("ecl","Expected credit loss", r=>r2(num(r.gross)*num(r.rate)/100),"130px","B{r}*C{r}/100"),
+    C("net","Net carrying amount", r=>r2(num(r.gross)-num(r.gross)*num(r.rate)/100),"130px","B{r}-D{r}")] },
 fiMat:{ key:"fiMat", rows:()=>S.fi.mat, blank:()=>({label:"",carry:0,m0:0,m1:0,m5:0}),
   note:"Contractual undiscounted cash flows of financial liabilities.",
   cols:[T("label","Financial liability","230px"),N("carry","Carrying amount","130px"),
     N("m0","Within 1 year","120px"),N("m1","1 to 5 years","120px"),N("m5","Over 5 years","120px"),
-    C("tot","Total contractual", r=>r2(num(r.m0)+num(r.m1)+num(r.m5)),"130px")] },
+    C("tot","Total contractual", r=>r2(num(r.m0)+num(r.m1)+num(r.m5)),"130px","C{r}+D{r}+E{r}")] },
 pools:{ key:"pools", rows:()=>S.pools, blank:()=>({pool:"D",rate:15,opWdv:0,a1:0,a2:0,a3:0,disp:0,repair:0}),
   note:"Additions are absorbed at 100% (Shrawan–Kartik), 66.67% (Mangsir–Falgun) and 33.33% (Chaitra–Ashad) per Schedule 2 §2(2). Repairs are deductible up to 7% of the depreciation base; the excess is capitalised into the pool.",
   cols:[T("pool","Pool","64px"),
     {k:"rate",label:"Rate (%)",t:"num",w:"82px",nt:1},N("opWdv","Opening WDV","124px"),
     N("a1","Additions — 1st trimester","124px"),N("a2","Additions — 2nd trimester","124px"),N("a3","Additions — 3rd trimester","124px"),
-    C("abs","Absorbed additions", r=>r2(num(r.a1)+num(r.a2)*2/3+num(r.a3)/3),"124px"),
+    C("abs","Absorbed additions", r=>r2(num(r.a1)+num(r.a2)*2/3+num(r.a3)/3),"124px","D{r}+E{r}*2/3+F{r}/3"),
     N("disp","Disposal proceeds","118px"),
-    C("base","Depreciation base", r=>r2(num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)),"124px"),
-    C("dep","Depreciation allowable", r=>poolDep(r),"130px"),
+    C("base","Depreciation base", r=>r2(num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)),"124px","C{r}+G{r}-H{r}"),
+    C("dep","Depreciation allowable", r=>poolDep(r),"130px",
+      'IF(AND($A{r}<>"E",I{r}>0,I{r}<=2000),I{r},MAX(0,I{r})*B{r}/100*__SPECIAL__)'),
     N("repair","Repairs incurred","118px"),
-    C("rall","Repairs allowed (7%)", r=>{ const b=Math.max(0,num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)); return r2(Math.min(num(r.repair), b*0.07)); },"124px"),
-    C("rexc","Repairs capitalised", r=>{ const b=Math.max(0,num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)); return r2(Math.max(0,num(r.repair)-b*0.07)); },"124px"),
-    C("cl","Closing WDV", r=>poolClose(r),"124px")] },
+    C("rall","Repairs allowed (7%)", r=>{ const b=Math.max(0,num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)); return r2(Math.min(num(r.repair), b*0.07)); },"124px","MIN(K{r},MAX(0,I{r})*0.07)"),
+    C("rexc","Repairs capitalised", r=>{ const b=Math.max(0,num(r.opWdv)+num(r.a1)+num(r.a2)*2/3+num(r.a3)/3-num(r.disp)); return r2(Math.max(0,num(r.repair)-b*0.07)); },"124px","MAX(0,K{r}-MAX(0,I{r})*0.07)"),
+    C("cl","Closing WDV", r=>poolClose(r),"124px","I{r}-J{r}+(E{r}/3+F{r}*2/3)+M{r}")] },
 taxAdd:{ key:"taxAdd", rows:()=>S.taxAdd, blank:()=>({label:"",amt:0}),
   cols:[T("label","Amount added back to accounting profit","420px"),N("amt","Amount","150px")] },
 taxLess:{ key:"taxLess", rows:()=>S.taxLess, blank:()=>({label:"",amt:0}),
@@ -1519,6 +1549,34 @@ function ledgerVal(){ return 0; }
 
 <script>
 /* ---------- 14. COMPUTATION ENGINE ---------- */
+/* NAS for NPOs reports by fund. Every income and expenditure caption belongs to one,
+   so the income and expenditure account can be presented in fund columns and the
+   restricted balance carried forward is the unspent portion of restricted income. */
+const FUND_OF = {
+  inc_grant_u:"unres", inc_donation:"unres", inc_member:"unres", inc_prog:"unres",
+  inc_kind:"unres", oi_other:"unres", oi_rent:"unres", oi_div:"unres", fin_income:"unres",
+  inc_grant_r:"res", exp_prog:"res",
+  inc_grant_e:"endow",
+  exp_prog_u:"unres", exp_fundraise:"unres", exp_emp:"unres", exp_dep:"unres",
+  exp_admin:"unres", exp_rep:"unres", exp_rent:"unres", exp_prof:"unres", exp_audit:"unres",
+  exp_travel:"unres", exp_other:"unres", exp_baddebt:"unres", fin_cost:"unres",
+  exp_fx_loss:"unres", exp_loss_disp:"unres", oi_gain_disp:"unres", oi_fx:"unres", oi_writeback:"unres"
+};
+const FUND_COLS = [["unres","Unrestricted fund","fund_unres"],
+                   ["res","Restricted fund","fund_res"],
+                   ["endow","Endowment fund","fund_endow"]];
+function fundOf(id){ return FUND_OF[id] || "unres"; }
+/* Income less expenditure of each fund for the year. */
+function fundResult(a, prior){
+  const out={unres:0,res:0,endow:0};
+  for(const c of catFor("NPO")){
+    const v=(prior?a.py:a.cy)[c.id]||0; if(!v) continue;
+    if(["REV","OI","FININC"].includes(c.grp)) out[fundOf(c.id)] += v;
+    else if(["OPEX","FIN","COS"].includes(c.grp)) out[fundOf(c.id)] -= v;
+  }
+  for(const k in out) out[k]=r2(out[k]);
+  return out;
+}
 const OCI_TARGET = {oci_reval:"eq_reval", oci_dbp:"eq_re", oci_fvoci_eq:"eq_fvoci_r", oci_fvoci_dt:"eq_fvoci_r",
   oci_hedge:"eq_other_r", oci_trans:"eq_other_r", oci_tax_nr:"eq_re", oci_tax_r:"eq_re"};
 const EPS = 0.005;
@@ -1547,8 +1605,14 @@ function compute(){
 
   /* ---- equity roll-forward: pre-closing TB carries the result in P&L accounts ---- */
   const eqAdd = {}, eqAddP = {};
-  eqAdd[fw==="NPO"?"fund_unres":"eq_re"] = pftC;
-  eqAddP[fw==="NPO"?"fund_unres":"eq_re"] = pftP;
+  if(fw==="NPO"){
+    /* The surplus of each fund stays in that fund: a restricted grant not yet spent
+       is a restricted balance carried forward, never free reserves. */
+    const fc=fundResult(a,0), fp=fundResult(a,1);
+    FUND_COLS.forEach(([k,,id])=>{ eqAdd[id]=fc[k]; eqAddP[id]=fp[k]; });
+  } else {
+    eqAdd["eq_re"] = pftC; eqAddP["eq_re"] = pftP;
+  }
   if(f.oci) for(const c of catFor(fw)) if(c.grp==="OCINR"||c.grp==="OCIR"){
     const t = OCI_TARGET[c.id]||"eq_re";
     eqAdd[t]=(eqAdd[t]||0)+(cy[c.id]||0); eqAddP[t]=(eqAddP[t]||0)+(py[c.id]||0);
@@ -1566,62 +1630,87 @@ function compute(){
 
   /* ---- statement of financial position ---- */
   const sofpRows=[];
-  const sec=(g_,label)=>{ const ls=linesIn(g_); if(!ls.length) return [0,0];
-    sofpRows.push(R("sec",label)); let c=0,p=0;
+  /* Rows carry where their figure comes from, so the workbook can be written as
+     live formulas instead of typed numbers: items name their statement line,
+     totals name the block of rows or the other totals they add up. */
+  const sec=(g_,label)=>{ const ls=linesIn(g_); if(!ls.length) return null;
+    sofpRows.push(R("sec",label)); let c=0,p=0; const from=sofpRows.length;
     for(const l of ls){ const n=takeNote(l.id,l.label,specialNote[l.id]||"ledger");
-      sofpRows.push(R("item",l.label,cy[l.id]||0,py[l.id]||0,n)); c+=cy[l.id]||0; p+=py[l.id]||0; }
-    return [r2(c),r2(p)]; };
-  const [ncaC,ncaP]=sec("NCA","Non-current assets");
-  if(linesIn("NCA").length) sofpRows.push(R("tot","Total non-current assets",ncaC,ncaP));
-  const [caC,caP]=sec("CA","Current assets");
-  if(linesIn("CA").length) sofpRows.push(R("tot","Total current assets",caC,caP));
+      const row=R("item",l.label,cy[l.id]||0,py[l.id]||0,n); row.src=l.id; sofpRows.push(row);
+      c+=cy[l.id]||0; p+=py[l.id]||0; }
+    return {cy:r2(c), py:r2(p), from, to:sofpRows.length-1}; };
+  const sTot=(label,c,p,cls,meta)=>{ const row=R("tot",label,c,p,"",cls||"");
+    Object.assign(row, meta||{}); sofpRows.push(row); return sofpRows.length-1; };
+  const secNca=sec("NCA","Non-current assets");
+  const iNca=secNca?sTot("Total non-current assets",secNca.cy,secNca.py,"",{from:secNca.from,to:secNca.to}):-1;
+  const secCa=sec("CA","Current assets");
+  const iCa=secCa?sTot("Total current assets",secCa.cy,secCa.py,"",{from:secCa.from,to:secCa.to}):-1;
+  const ncaC=secNca?secNca.cy:0, ncaP=secNca?secNca.py:0, caC=secCa?secCa.cy:0, caP=secCa?secCa.py:0;
   sofpRows.push(BLANK());
-  sofpRows.push(R("tot","TOTAL ASSETS",r2(ncaC+caC),r2(ncaP+caP),"","grand"));
+  sTot("TOTAL ASSETS",r2(ncaC+caC),r2(ncaP+caP),"grand",{add:[iNca,iCa].filter(x=>x>=0)});
   sofpRows.push(R("sec",fw==="NPO"?"Fund balances":"Equity"));
+  const eqFrom=sofpRows.length;
   for(const id of eqIds){ const c=CATBY[id]; const n=takeNote(id,c.label,"eqline");
-    sofpRows.push(R("item",c.label,eqVal(id,0),eqVal(id,1),n)); }
-  sofpRows.push(R("tot",fw==="NPO"?"Total fund balances":"Total equity",eqTotC,eqTotP));
-  const [nclC,nclP]=sec("NCL","Non-current liabilities");
-  if(linesIn("NCL").length) sofpRows.push(R("tot","Total non-current liabilities",nclC,nclP));
-  const [clC,clP]=sec("CL","Current liabilities");
-  if(linesIn("CL").length) sofpRows.push(R("tot","Total current liabilities",clC,clP));
+    const row=R("item",c.label,eqVal(id,0),eqVal(id,1),n); row.src=id; row.equity=true; sofpRows.push(row); }
+  const iEq=sTot(fw==="NPO"?"Total fund balances":"Total equity",eqTotC,eqTotP,"",{from:eqFrom,to:sofpRows.length-1});
+  const secNcl=sec("NCL","Non-current liabilities");
+  const iNcl=secNcl?sTot("Total non-current liabilities",secNcl.cy,secNcl.py,"",{from:secNcl.from,to:secNcl.to}):-1;
+  const secCl=sec("CL","Current liabilities");
+  const iCl=secCl?sTot("Total current liabilities",secCl.cy,secCl.py,"",{from:secCl.from,to:secCl.to}):-1;
+  const nclC=secNcl?secNcl.cy:0, nclP=secNcl?secNcl.py:0, clC=secCl?secCl.cy:0, clP=secCl?secCl.py:0;
   sofpRows.push(BLANK());
-  sofpRows.push(R("tot",fw==="NPO"?"TOTAL FUNDS AND LIABILITIES":"TOTAL EQUITY AND LIABILITIES",
-    r2(eqTotC+nclC+clC), r2(eqTotP+nclP+clP),"","grand"));
+  sTot(fw==="NPO"?"TOTAL FUNDS AND LIABILITIES":"TOTAL EQUITY AND LIABILITIES",
+    r2(eqTotC+nclC+clC), r2(eqTotP+nclP+clP),"grand",{add:[iEq,iNcl,iCl].filter(x=>x>=0)});
   const sofpDiff = r2((ncaC+caC)-(eqTotC+nclC+clC));
   const sofpDiffP = r2((ncaP+caP)-(eqTotP+nclP+clP));
 
   /* ---- statement of profit or loss ---- */
   const plRows=[]; const isNPO = fw==="NPO";
-  const push=(g_,label,neg)=>{ const ls=linesIn(g_); if(!ls.length) return;
+  const push=(g_,label,neg)=>{ const ls=linesIn(g_); if(!ls.length) return null;
     if(label) plRows.push(R("sec",label));
+    const from=plRows.length;
     for(const l of ls){ const n=takeNote(l.id,l.label,"ledger");
-      plRows.push(R("item",l.label,(neg?-1:1)*(cy[l.id]||0),(neg?-1:1)*(py[l.id]||0),n)); } };
+      const row=R("item",l.label,(neg?-1:1)*(cy[l.id]||0),(neg?-1:1)*(py[l.id]||0),n);
+      row.src=l.id; row.neg=!!neg; plRows.push(row); }
+    return {from, to:plRows.length-1}; };
+  const pTot=(label,c,p,cls,meta)=>{ const row=R("tot",label,c,p,"",cls||"");
+    Object.assign(row, meta||{}); plRows.push(row); return plRows.length-1; };
+  const span=(...b)=>{ const xs=b.filter(Boolean); return xs.length?{from:xs[0].from,to:xs[xs.length-1].to}:{}; };
   if(isNPO){
-    push("REV","Income"); plRows.push(R("tot","Total income",r2(revC+oiC+fiC),r2(revP+oiP+fiP)));
-    push("OI",""); push("FININC","");
-    plRows.push(BLANK()); push("OPEX","Expenditure",true); push("FIN","",true);
-    plRows.push(R("tot","Total expenditure",r2(opxC+finC),r2(opxP+finP)));
+    /* An income and expenditure account lists expenditure positive and deducts it,
+       so the total below the block agrees to the figures printed above it. */
+    const i1=push("REV","Income"), i2=push("OI",""), i3=push("FININC","");
+    const iInc=pTot("Total income",r2(revC+oiC+fiC),r2(revP+oiP+fiP),"",span(i1,i2,i3));
     plRows.push(BLANK());
-    plRows.push(R("tot","Surplus / (deficit) for the year",pftC,pftP,"","grand"));
+    const e1=push("OPEX","Expenditure"), e2=push("FIN","");
+    const iExp=pTot("Total expenditure",r2(opxC+finC),r2(opxP+finP),"",span(e1,e2));
+    plRows.push(BLANK());
+    const iS=pTot("Surplus / (deficit) for the year",pftC,pftP,"grand",{add:[iInc],sub:[iExp]});
+    plRows[iS].isProfit=true;
   } else {
-    push("REV",null); plRows.push(R("tot","Revenue",revC,revP));
-    if(linesIn("COS").length){ push("COS",null,true); plRows.push(R("tot","Gross profit",gpC,gpP)); }
-    push("OI",null);
-    push("OPEX",null,true);
-    plRows.push(R("tot","Operating profit / (loss)",opC,opP));
-    push("FININC",null); push("FIN",null,true); push("ASSOC",null);
-    plRows.push(R("tot","Profit / (loss) before tax",pbtC,pbtP));
-    if(linesIn("TAX").length){ push("TAX",null,true); }
-    plRows.push(R("tot","Profit / (loss) for the year",pftC,pftP,"",f.oci?"":"grand"));
+    const r1=push("REV",null);
+    const iRev=pTot("Revenue",revC,revP,"",span(r1));
+    let iRun=iRev;
+    if(linesIn("COS").length){ const c1=push("COS",null,true);
+      iRun=pTot("Gross profit",gpC,gpP,"",Object.assign({add:[iRev]},span(c1))); }
+    const o1=push("OI",null), o2=push("OPEX",null,true);
+    iRun=pTot("Operating profit / (loss)",opC,opP,"",Object.assign({add:[iRun]},span(o1,o2)));
+    const f1=push("FININC",null), f2=push("FIN",null,true), f3=push("ASSOC",null);
+    const iPbt=pTot("Profit / (loss) before tax",pbtC,pbtP,"",Object.assign({add:[iRun]},span(f1,f2,f3)));
+    const tx=linesIn("TAX").length?push("TAX",null,true):null;
+    const iPft=pTot("Profit / (loss) for the year",pftC,pftP,f.oci?"":"grand",
+      Object.assign({add:[iPbt]},span(tx)));
+    plRows[iPft].isProfit=true;
     if(f.oci && (Math.abs(ociC)>EPS||Math.abs(ociP)>EPS||linesIn("OCINR").length||linesIn("OCIR").length)){
       plRows.push(BLANK()); plRows.push(R("sec","Other comprehensive income"));
-      if(linesIn("OCINR").length){ plRows.push(R("sub",GRP_LABEL.OCINR));
-        for(const l of linesIn("OCINR")) plRows.push(R("item",l.label,cy[l.id]||0,py[l.id]||0)); }
-      if(linesIn("OCIR").length){ plRows.push(R("sub",GRP_LABEL.OCIR));
-        for(const l of linesIn("OCIR")) plRows.push(R("item",l.label,cy[l.id]||0,py[l.id]||0)); }
-      plRows.push(R("tot","Other comprehensive income for the year, net of tax",ociC,ociP));
-      plRows.push(R("tot","Total comprehensive income for the year",tciC,tciP,"","grand"));
+      let oFrom=null, oTo=null;
+      const ociBlock=(g_)=>{ if(!linesIn(g_).length) return;
+        plRows.push(R("sub",GRP_LABEL[g_]));
+        for(const l of linesIn(g_)){ const row=R("item",l.label,cy[l.id]||0,py[l.id]||0);
+          row.src=l.id; plRows.push(row); if(oFrom===null) oFrom=plRows.length-1; oTo=plRows.length-1; } };
+      ociBlock("OCINR"); ociBlock("OCIR");
+      const iOci=pTot("Other comprehensive income for the year, net of tax",ociC,ociP,"",{from:oFrom,to:oTo});
+      pTot("Total comprehensive income for the year",tciC,tciP,"grand",{add:[iPft,iOci]});
     }
   }
 
@@ -1636,8 +1725,11 @@ function compute(){
   noncash = r2(noncash);
   const invIncome = r2(fiC + (cy.oi_div||0));
   const cfRows=[];
+  const cTot=(label,c,p,cls,meta)=>{ const row=R("tot",label,c,p,"",cls||"");
+    Object.assign(row, meta||{}); cfRows.push(row); return cfRows.length-1; };
   cfRows.push(R("sec","Cash flows from operating activities"));
-  cfRows.push(R("item","Profit / (loss) before tax",pbtC,pbtP));
+  cfRows.push(R("item","Profit / (loss) before tax",pbtC,pbtP)); const iCfPbt=cfRows.length-1;
+  cfRows[iCfPbt].fromPbt=true;
   cfRows.push(R("sub","Adjustments for:"));
   const adjLines=[];
   for(const c of catFor(fw)) if(c.cf==="noncash" && present(c.id)){
@@ -1646,12 +1738,15 @@ function compute(){
   }
   if(Math.abs(finC)>EPS||Math.abs(finP)>EPS) adjLines.push(["Finance costs",finC,finP]);
   if(Math.abs(invIncome)>EPS) adjLines.push(["Interest and dividend income",-invIncome,-r2(fiP+(py.oi_div||0))]);
+  const adjFrom=cfRows.length;
   adjLines.forEach(l=>cfRows.push(R("item",l[0],l[1],l[2])));
+  const adjTo=cfRows.length-1;
   const opBeforeWC = r2(pbtC + noncash + finC - invIncome);
   const opBeforeWCP = r2(pbtP + (function(){let s=0;for(const c of catFor(fw)) if(c.cf==="noncash"){const e=c.grp==="OPEX"||c.grp==="COS"||c.grp==="FIN"; s+=(e?1:-1)*(py[c.id]||0);} return r2(s);})() + finP - r2(fiP+(py.oi_div||0)));
-  cfRows.push(R("tot","Operating profit before working capital changes",opBeforeWC,opBeforeWCP));
+  const iCfOpBefore=cTot("Operating profit before working capital changes",opBeforeWC,opBeforeWCP,"",
+    {add:[iCfPbt], from:adjFrom<=adjTo?adjFrom:null, to:adjTo});
   cfRows.push(R("sub","Changes in working capital:"));
-  let wc=0;
+  const wcFrom=cfRows.length; let wc=0;
   for(const c of catFor(fw)){
     if(c.cf!=="wc_a" && c.cf!=="wc_l") continue;
     const d = c.cf==="wc_a" ? r2((py[c.id]||0)-(cy[c.id]||0)) : r2((cy[c.id]||0)-(py[c.id]||0));
@@ -1661,8 +1756,11 @@ function compute(){
     wc += d;
   }
   wc = r2(wc);
+  const wcTo=cfRows.length-1;
   const cashGen = r2(opBeforeWC + wc);
-  cfRows.push(R("tot","Cash generated from operations",cashGen,null));
+  const iCfGen=cTot("Cash generated from operations",cashGen,null,"",
+    {add:[iCfOpBefore], from:wcFrom<=wcTo?wcFrom:null, to:wcTo});
+  const opTailFrom=cfRows.length;
   const taxLiabC = r2((cy.cl_ctax||0)-(cy.ca_ctax||0)), taxLiabP = r2((py.cl_ctax||0)-(py.ca_ctax||0));
   const taxPaidD = r2(taxLiabP + (cy.tax_cur||0) + (cy.tax_prior||0) - taxLiabC);
   const taxPaid = ov("taxPaid", taxPaidD);
@@ -1672,10 +1770,13 @@ function compute(){
   if(Math.abs(taxPaid)>EPS) cfRows.push(R("item","Income taxes paid",-taxPaid,null));
   const cfOtherO = (o.other||[]).filter(x=>x.sec==="O").reduce((s,x)=>s+num(x.amt),0);
   (o.other||[]).filter(x=>x.sec==="O"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other operating item",num(x.amt),null)));
+  const opTailTo=cfRows.length-1;
   const netOp = r2(cashGen - (intInFin?0:intPaid) - taxPaid + cfOtherO);
-  cfRows.push(R("tot","Net cash generated from / (used in) operating activities",netOp,null));
+  const iCfOp=cTot("Net cash generated from / (used in) operating activities",netOp,null,"",
+    {add:[iCfGen], from:opTailFrom<=opTailTo?opTailFrom:null, to:opTailTo});
 
   cfRows.push(BLANK()); cfRows.push(R("sec","Cash flows from investing activities"));
+  const invFrom=cfRows.length;
   const ppeAdd = r2(S.ppe.reduce((s,r)=>s+num(r.add),0));
   const intanAdd = r2(S.intan.reduce((s,r)=>s+num(r.add),0));
   const nonCashAdd = ov("nonCashAdd",0);
@@ -1692,10 +1793,13 @@ function compute(){
   if(Math.abs(divRecv)>EPS) cfRows.push(R("item","Dividends received",divRecv,null));
   const cfOtherI = (o.other||[]).filter(x=>x.sec==="I").reduce((s,x)=>s+num(x.amt),0);
   (o.other||[]).filter(x=>x.sec==="I"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other investing item",num(x.amt),null)));
+  const invTo=cfRows.length-1;
   const netInv = r2(-ppeCash - intanAdd + dispPpe + invMove + dispInv + intRecv + divRecv + cfOtherI);
-  cfRows.push(R("tot","Net cash generated from / (used in) investing activities",netInv,null));
+  const iCfInv=cTot("Net cash generated from / (used in) investing activities",netInv,null,"",
+    {from:invFrom<=invTo?invFrom:null, to:invTo});
 
   cfRows.push(BLANK()); cfRows.push(R("sec","Cash flows from financing activities"));
+  const finFrom=cfRows.length;
   const eqIssueD = r2((function(){let s=0;for(const c of catFor(fw)) if(c.cf==="fin_e"&&c.grp==="EQ") s+=(cy[c.id]||0)-(py[c.id]||0); return r2(s);})());
   const eqIssue = ov("eqIssue", eqIssueD);
   const borrowMove = r2((function(){let s=0;for(const c of catFor(fw)) if(c.cf==="fin_l") s+=(cy[c.id]||0)-(py[c.id]||0); return r2(s);})());
@@ -1708,16 +1812,23 @@ function compute(){
   if(Math.abs(divPaid)>EPS) cfRows.push(R("item","Dividends paid",-divPaid,null));
   const cfOtherF = (o.other||[]).filter(x=>x.sec==="F").reduce((s,x)=>s+num(x.amt),0);
   (o.other||[]).filter(x=>x.sec==="F"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other financing item",num(x.amt),null)));
+  const finTo=cfRows.length-1;
   const netFin = r2(eqIssue + borrowMove - leasePaid - (intInFin?intPaid:0) - divPaid + cfOtherF);
-  cfRows.push(R("tot","Net cash generated from / (used in) financing activities",netFin,null));
+  const iCfFin=cTot("Net cash generated from / (used in) financing activities",netFin,null,"",
+    {from:finFrom<=finTo?finFrom:null, to:finTo});
 
   cfRows.push(BLANK());
   const netChg = r2(netOp+netInv+netFin);
-  cfRows.push(R("tot","Net increase / (decrease) in cash and cash equivalents",netChg,null));
+  const iCfNet=cTot("Net increase / (decrease) in cash and cash equivalents",netChg,null,"",
+    {add:[iCfOp,iCfInv,iCfFin]});
   cfRows.push(R("item","Cash and cash equivalents at the beginning of the year",cashP,null));
+  const iCfOpen=cfRows.length-1; cfRows[iCfOpen].openCash=true;
   const cfDiff = r2(cashP + netChg - cashC);
-  if(Math.abs(cfDiff)>num(S.meta.tol)) cfRows.push(R("item","Unexplained difference — to be investigated",-cfDiff,null,"","diff"));
-  cfRows.push(R("tot","Cash and cash equivalents at the end of the year",cashC,null,"","grand"));
+  const closeAdd=[iCfNet,iCfOpen];
+  if(Math.abs(cfDiff)>num(S.meta.tol)){
+    cfRows.push(R("item","Unexplained difference — to be investigated",-cfDiff,null,"","diff"));
+    closeAdd.push(cfRows.length-1); }
+  cTot("Cash and cash equivalents at the end of the year",cashC,null,"grand",{add:closeAdd});
 
   /* ---- statement of changes in equity / fund balances ---- */
   const soceCols = eqIds.length?eqIds:catFor(fw).filter(c=>c.grp==="EQ").slice(0,3).map(c=>c.id);
@@ -1732,8 +1843,16 @@ function compute(){
     {ok:Math.abs(sofpDiffP)<=num(S.meta.tol)||S.meta.first==="yes", label:"Comparative position balances", detail:"Difference "+dispRaw(sofpDiffP)},
     {ok:Math.abs(cfDiff)<=num(S.meta.tol), label:"Cash flow reconciles to movement in cash", detail:"Difference "+dispRaw(cfDiff)},
     {ok:Math.abs(soce.diffC)<=num(S.meta.tol), label:"Closing equity per changes in equity agrees to the position", detail:"Difference "+dispRaw(soce.diffC)},
-    {ok:Math.abs(r2(S.ppe.reduce((s,r)=>s+(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)),0)-(cy.nca_ppe||0)))<=num(S.meta.tol),
-     label:"Property, plant and equipment schedule agrees to the ledger", detail:"Schedule "+dispRaw(S.ppe.reduce((s,r)=>s+(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)),0))+" vs ledger "+dispRaw(cy.nca_ppe||0)},
+    (()=>{ const nbv=rows=>r2(rows.reduce((s,r)=>s+(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))
+             -(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)),0));
+      /* A framework without a separate intangibles caption carries software inside
+         property, plant and equipment, so both schedules back that one ledger line. */
+      const hasIntan = catFor(fw).some(c=>c.id==="nca_intan");
+      const sch = nbv(S.ppe) + (hasIntan?0:nbv(S.intan));
+      const led = r2((cy.nca_ppe||0)+(cy.nca_cwip||0));
+      return {ok:Math.abs(r2(sch-led))<=num(S.meta.tol),
+        label:"Property, plant and equipment schedule agrees to the ledger",
+        detail:"Schedule "+dispRaw(sch)+" vs ledger "+dispRaw(led)}; })(),
     {ok:Math.abs(r2(S.ppe.reduce((s,r)=>s+num(r.dep),0)+S.intan.reduce((s,r)=>s+num(r.dep),0)-(cy.exp_dep||0)))<=num(S.meta.tol),
      label:"Depreciation per schedules agrees to the charge in profit or loss", detail:"Schedules "+dispRaw(S.ppe.reduce((s,r)=>s+num(r.dep),0)+S.intan.reduce((s,r)=>s+num(r.dep),0))+" vs ledger "+dispRaw(cy.exp_dep||0)}
   ];
@@ -2059,12 +2178,12 @@ function renderTax(){
 }
 let taxSoftT; function renderTaxSoft(){ clearTimeout(taxSoftT); taxSoftT=setTimeout(renderTax,600); }
 function compHTML(rows){
-  return `<table class="fs" style="max-width:760px"><tbody>`+rows.map(r=>{
+  return `<div class="scrollx"><table class="fs" style="max-width:760px"><tbody>`+rows.map(r=>{
     const [t,label,v,cls]=r;
     if(t==="sec") return `<tr class="sub"><td>${esc(label)}</td><td class="n"></td></tr>`;
     const c = t==="tot"?"tot"+(cls?" "+cls:""):"it";
     return `<tr class="${c}"><td class="${t==="sub2"?"l":"l"}" style="${t==="sub2"?"padding-left:14px":""}">${esc(label)}</td><td class="n">${v===null?"":dispRaw(v)}</td></tr>`;
-  }).join("")+"</tbody></table>";
+  }).join("")+"</tbody></table></div>";
 }
 </script>
 
@@ -2236,7 +2355,7 @@ function fmtAd(d){ if(!d) return ""; const x=new Date(d+"T00:00:00"); if(isNaN(x
   return x.toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}); }
 function rowsHTML(rows, showPY, editPY){
   const cy=S.meta.cyLabel||"Current year", py=S.meta.pyLabel||"Prior year";
-  let h = `<table class="fs"><thead><tr><th class="l">Particulars</th><th class="c">Note</th>
+  let h = `<div class="scrollx"><table class="fs"><thead><tr><th class="l">Particulars</th><th class="c">Note</th>
     <th>${esc(cy)}</th>${showPY?`<th>${esc(py)}</th>`:""}</tr></thead><tbody>`;
   for(const r of rows){
     if(r.type==="blank"){ h+=`<tr class="blank"><td colspan="${showPY?4:3}"></td></tr>`; continue; }
@@ -2252,7 +2371,7 @@ function rowsHTML(rows, showPY, editPY){
       : `<td class="n">${r.py===null||r.py===undefined?"":disp(r.py)}</td>`;
     h += "</tr>";
   }
-  return h+"</tbody></table>";
+  return h+"</tbody></table></div>";
 }
 function sigBlock(){
   const m=S.meta;
@@ -2313,7 +2432,7 @@ function renderFs(){
 }
 function soceFsHTML(m){
   const s=m.soce;
-  let h=`<div style="overflow-x:auto"><table class="fs" style="min-width:640px"><thead><tr><th class="l">Particulars</th>
+  let h=`<div class="scrollx"><table class="fs" style="min-width:640px"><thead><tr><th class="l">Particulars</th>
     ${s.cols.map(c=>`<th>${esc(c.label)}</th>`).join("")}<th>Total</th></tr></thead><tbody>`;
   for(const r of s.rows){
     const tot=s.cols.reduce((x,c)=>x+(r.v[c.id]||0),0);
@@ -2340,17 +2459,17 @@ function notesHTML(m){
         else h+=`<p>${esc(t)}</p>`;
       }
     } else if(b.kind==="rows"){
-      h += `<table class="fs" style="margin:6px 0 4px"><thead><tr><th class="l">Particulars</th><th>${esc(cyL)}</th>${showPY?`<th>${esc(pyL)}</th>`:""}</tr></thead><tbody>`;
+      h += `<div class="scrollx"><table class="fs" style="margin:6px 0 4px"><thead><tr><th class="l">Particulars</th><th>${esc(cyL)}</th>${showPY?`<th>${esc(pyL)}</th>`:""}</tr></thead><tbody>`;
       for(const r of b.rows) h+=`<tr class="it"><td class="l">${esc(r.label)}</td><td class="n">${disp(r.cy)}</td>${showPY?`<td class="n">${disp(r.py)}</td>`:""}</tr>`;
-      h += `<tr class="tot grand"><td class="l">Total</td><td class="n">${disp(b.total.cy)}</td>${showPY?`<td class="n">${disp(b.total.py)}</td>`:""}</tr></tbody></table>`;
+      h += `<tr class="tot grand"><td class="l">Total</td><td class="n">${disp(b.total.cy)}</td>${showPY?`<td class="n">${disp(b.total.py)}</td>`:""}</tr></tbody></table></div>`;
     } else if(b.kind==="matrix"){
       h += matrixHTML(b.matrix);
     } else if(b.kind==="multi"){
       for(const p of b.parts){
         h += `<p style="font-weight:600;margin-top:14px;color:var(--ink)">${esc(p.sub)}</p>`;
         if(p.matrix) h += matrixHTML(p.matrix);
-        else if(p.rows){ h += `<table class="fs" style="margin:6px 0"><tbody>`+
-          p.rows.map(r=>`<tr class="${r.bold?"tot":"it"}"><td class="l">${esc(r.label)}</td><td class="n">${r.cy===null?"":disp(r.cy)}</td></tr>`).join("")+`</tbody></table>`; }
+        else if(p.rows){ h += `<div class="scrollx"><table class="fs" style="margin:6px 0"><tbody>`+
+          p.rows.map(r=>`<tr class="${r.bold?"tot":"it"}"><td class="l">${esc(r.label)}</td><td class="n">${r.cy===null?"":disp(r.cy)}</td></tr>`).join("")+`</tbody></table></div>`; }
       }
     }
   }
@@ -2358,7 +2477,7 @@ function notesHTML(m){
   return h;
 }
 function matrixHTML(mx){
-  let h=`<div style="overflow-x:auto;margin:6px 0"><table class="fs" style="min-width:100%;font-size:12px"><thead><tr>`+
+  let h=`<div class="scrollx" style="margin:6px 0"><table class="fs" style="min-width:100%;font-size:12px"><thead><tr>`+
     mx.head.map((x,i)=>`<th class="${mx.types[i]==="n"?"":"l"}">${esc(x)}</th>`).join("")+`</tr></thead><tbody>`;
   for(const row of mx.body) h+=`<tr class="it">`+row.map((v,i)=>`<td class="${mx.types[i]==="n"?"n":"l"}">${mx.types[i]==="n"?disp(v):esc(v)}</td>`).join("")+`</tr>`;
   h+=`<tr class="tot grand">`+mx.total.map((v,i)=>`<td class="${mx.types[i]==="n"?"n":"l"}">${mx.types[i]==="n"?disp(v):esc(v)}</td>`).join("")+`</tr>`;
@@ -2425,6 +2544,13 @@ Sheet.prototype.blank = function(n){ for(let i=0;i<(n||1);i++) this.rows.push([]
 Sheet.prototype.merge = function(r1,c1,r2,c2){ this.merges.push(X.col(c1)+r1+":"+X.col(c2)+r2); };
 const cS = (v,s)=>({v, s:s===undefined?ST.lbl:s});
 const cN = (v,s)=>({v:(v===null||v===undefined||!isFinite(v))?null:v, s:s===undefined?ST.num:s, n:true});
+/* A live cell: the formula is what the workbook carries, the value is only a cached
+   copy so the figure is visible before Excel recalculates. */
+const cF = (f,v,s)=>({f, v:(v===null||v===undefined||!isFinite(v))?null:v, s:s===undefined?ST.num:s, n:true});
+/* Quote a sheet name for use inside a formula. */
+const sq = n => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) ? n : "'"+String(n).replace(/'/g,"''")+"'";
+/* Sum a column across a contiguous run of rows, skipping gaps. */
+function sumRange(col, a, b){ return "SUM("+col+a+":"+col+b+")"; }
 function sheetXml(sh){
   let x = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`;
@@ -2440,6 +2566,8 @@ function sheetXml(sh){
     cells.forEach((c,ci)=>{
       if(c===null||c===undefined) return;
       const ref = X.col(ci)+rn;
+      if(c.f !== undefined && c.f !== null){
+        x += `<c r="${ref}" s="${c.s}"><f>${X.esc(c.f)}</f>${(c.v===null||c.v===undefined)?"":`<v>${c.v}</v>`}</c>`; return; }
       if(c.n){ if(c.v===null||c.v===undefined) { x += `<c r="${ref}" s="${c.s}"/>`; return; }
         x += `<c r="${ref}" s="${c.s}"><v>${c.v}</v></c>`; }
       else { const t = c.v===null||c.v===undefined?"":String(c.v);
@@ -2527,7 +2655,8 @@ ${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" Content
 </Relationships>`]);
   F.push(["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets>${sheets.map((s,i)=>`<sheet name="${X.esc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`]);
+<sheets>${sheets.map((s,i)=>`<sheet name="${X.esc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets>
+<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`]);
   F.push(["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 ${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}
@@ -2983,8 +3112,10 @@ async function readXlsx(buf){
 
 /* ---------- 25. IMPORT MAPPING SCREEN ---------- */
 const ROLES=[["","— ignore —"],["code","Ledger code"],["name","Ledger name"],
-  ["dr","Debit — current year"],["cr","Credit — current year"],["bal","Balance — current (Dr +, Cr −)"],
-  ["pdr","Debit — prior year"],["pcr","Credit — prior year"],["pbal","Balance — prior (Dr +, Cr −)"]];
+  ["odr","Opening Debit"],["ocr","Opening Credit"],["obal","Opening Balance (Dr +, Cr −)"],
+  ["tdr","Transactions Debit"],["tcr","Transactions Credit"],
+  ["dr","Closing Debit"],["cr","Closing Credit"],["bal","Closing Balance (Dr +, Cr −)"],
+  ["pdr","Debit — comparative year"],["pcr","Credit — comparative year"],["pbal","Balance — comparative (Dr +, Cr −)"]];
 let IMP={sheets:[], si:0, roles:[], hdr:0, first:1};
 function looksNumeric(v){ if(v===""||v==null) return false; return isFinite(num(v)) && /[\d]/.test(String(v)); }
 function guessRoles(rows, hdr){
@@ -3011,25 +3142,54 @@ function guessRoles(rows, hdr){
     if(k!==null && newest!==null && k===newest) return false;
     return null;                                   /* unknown - decide by order */
   };
-  const kinds=head.map(h=>{
+  /* An accounting package usually exports three phases side by side: the balance
+     brought forward, the movement in the year, and the balance carried forward -
+     each split into debit and credit. Read the phase as well as the side, and
+     carry a heading down when only the phase is labelled above merged cells. */
+  const phaseOf=h=>{
+    if(/open|b\/?f|brought|as at the beginning|balance b/.test(h)) return "o";
+    if(/transact|movement|during|period total|turnover|current period|debit and credit|dr\/cr for/.test(h)) return "t";
+    if(/clos|c\/?f|carried|as at the end|balance c/.test(h)) return "c";
+    return null;
+  };
+  const above=(hdr>0?(rows[hdr-1]||[]):[]).map(x=>String(x||"").toLowerCase().trim());
+  let carried=null;
+  const phases=head.map((h,i)=>{
+    let ph=phaseOf(h);
+    if(!ph){ const a=above[i]; if(a){ const pa=phaseOf(a); if(pa){ carried=pa; ph=pa; } }
+             else if(carried && /debit|credit|\bdr\b|\bcr\b/.test(h)) ph=carried; }
+    else carried=ph;
+    return ph;
+  });
+  const kinds=head.map((h,i)=>{
     if(!h) return null;
     if(/^(sn|s\.n|sl|sr|#)$/.test(h)) return null;
     if(/code|a\/c|ac no|gl no|account no|ledger no/.test(h)) return {k:"code"};
     if(/ledger|particular|account|description|head|narration|name/.test(h)) return {k:"name"};
-    if(/debit|\bdr\b/.test(h)) return {k:"dr", p:priority(h)};
-    if(/credit|\bcr\b/.test(h)) return {k:"cr", p:priority(h)};
-    if(/balance|closing|amount|total/.test(h)) return {k:"bal", p:priority(h)};
+    const ph=phases[i];
+    if(/debit|\bdr\b/.test(h)) return {k:"dr", ph, p:priority(h)};
+    if(/credit|\bcr\b/.test(h)) return {k:"cr", ph, p:priority(h)};
+    if(/balance|closing|opening|amount|total/.test(h)) return {k:"bal", ph, p:priority(h)};
     return null;
   });
+  const PRE={o:"o", t:"t", c:""};
   const used={dr:false, cr:false, bal:false};
   kinds.forEach((info,i)=>{
     if(!info) return;
     if(info.k==="code"||info.k==="name"){ roles[i]=info.k; return; }
+    if(info.ph){ roles[i] = PRE[info.ph] + info.k; return; }   /* phase wins over year */
     let prior = info.p;
-    if(prior===null){ prior = used[info.k]; }   /* second one of its kind is the comparative */
+    if(prior===null) prior = used[info.k];
     roles[i] = prior ? "p"+info.k : info.k;
     if(!prior) used[info.k]=true;
   });
+  /* Three unlabelled debit/credit pairs in a row is the opening / transactions /
+     closing layout even when nothing says so. */
+  const amountCols=roles.map((r,i)=>({r,i})).filter(x=>["dr","cr","pdr","pcr"].includes(x.r));
+  if(amountCols.length===6 && !roles.some(r=>/^[ot]/.test(r))){
+    const order=["odr","ocr","tdr","tcr","dr","cr"];
+    amountCols.forEach((x,k)=>roles[x.i]=order[k]);
+  }
   if(!roles.includes("name")){                       /* no usable headings — infer from the data */
     const body=rows.slice(hdr+1, hdr+40).filter(r=>r && r.length);
     let bestText=-1, bestScore=-1;
@@ -3121,37 +3281,59 @@ function renderImport(){
     IMP.roles[c]=v; renderImport();
   });
   const has=r=>IMP.roles.includes(r);
+  const hasClosing = has("dr")||has("cr")||has("bal");
+  const hasOpening = has("odr")||has("ocr")||has("obal");
+  const hasTxn = has("tdr")||has("tcr");
   const problems=[];
   if(!has("name")) problems.push("No column is marked as the Ledger name.");
-  if(!has("dr") && !has("cr") && !has("bal")) problems.push("No amount column — mark Debit and Credit, or a single Balance column.");
+  if(!hasClosing && !(hasOpening && hasTxn))
+    problems.push("No closing figures — mark Closing Debit and Credit, or mark Opening plus Transactions so closing can be derived.");
   $("impWarn").textContent = problems.join("  ");
   $("impWarn").style.display = problems.length?"":"none";
   $("impOk").disabled = problems.length>0;
+  const openSel = $("impOpen");
+  openSel.closest("label").style.display = hasOpening ? "" : "none";
   const n=Math.max(0, rows.length-IMP.first);
+  let how = hasClosing ? "closing balances" : "opening plus transactions";
+  let comp = has("pdr")||has("pcr")||has("pbal") ? "comparatives from the prior year columns"
+           : (hasOpening && openSel.value==="py") ? "comparatives from the opening balances"
+           : "no comparatives";
   $("impStatus").textContent = problems.length?"Assign the missing columns to continue":
-    ("Ready — about "+n+" rows will be read"+(has("pdr")||has("pcr")||has("pbal")?", with comparatives":", current year only"));
+    ("Ready — about "+n+" rows, current year from "+how+", "+comp);
 }
 function runImport(){
   const rows=IMP.sheets[IMP.si].rows, R=IMP.roles;
   const at=role=>R.indexOf(role);
-  const iCode=at("code"), iName=at("name"), iDr=at("dr"), iCr=at("cr"), iBal=at("bal"),
-        iPdr=at("pdr"), iPcr=at("pcr"), iPbal=at("pbal");
-  const out=[]; let skipped=0;
+  const iCode=at("code"), iName=at("name");
+  const iOdr=at("odr"), iOcr=at("ocr"), iObal=at("obal");
+  const iTdr=at("tdr"), iTcr=at("tcr");
+  const iDr=at("dr"), iCr=at("cr"), iBal=at("bal");
+  const iPdr=at("pdr"), iPcr=at("pcr"), iPbal=at("pbal");
+  const openIsPy = iPdr<0 && iPcr<0 && iPbal<0 &&
+                   (iOdr>=0||iOcr>=0||iObal>=0) && $("impOpen").value==="py";
+  const cell=(row,i)=> i>=0 ? num(row[i]) : 0;
+  const out=[]; let skipped=0, drift=0;
   for(let r=IMP.first;r<rows.length;r++){
     const row=rows[r]||[];
     const name=String(row[iName]==null?"":row[iName]).trim();
     if(!name){ skipped++; continue; }
-    if(/^(total|grand total|sub ?total|opening balance|closing balance)\b/i.test(name)){ skipped++; continue; }
-    let dr=iDr>=0?num(row[iDr]):0, cr=iCr>=0?num(row[iCr]):0;
-    if(iBal>=0){ const b=num(row[iBal]); if(b>=0) dr+=b; else cr+=-b; }
-    let pdr=iPdr>=0?num(row[iPdr]):0, pcr=iPcr>=0?num(row[iPcr]):0;
-    if(iPbal>=0){ const b=num(row[iPbal]); if(b>=0) pdr+=b; else pcr+=-b; }
-    if(dr<0){ cr+=-dr; dr=0; } if(cr<0){ dr+=-cr; cr=0; }
-    if(pdr<0){ pcr+=-pdr; pdr=0; } if(pcr<0){ pdr+=-pcr; pcr=0; }
+    if(/^(total|grand total|sub ?total|opening balance|closing balance|difference in opening)\b/i.test(name)){ skipped++; continue; }
+    /* Work in signed amounts: debit positive, credit negative. */
+    const opening = (iObal>=0 ? num(row[iObal]) : cell(row,iOdr)-cell(row,iOcr));
+    const txn     = cell(row,iTdr)-cell(row,iTcr);
+    const hasClose = iDr>=0||iCr>=0||iBal>=0;
+    const closing = hasClose ? (iBal>=0 ? num(row[iBal]) : cell(row,iDr)-cell(row,iCr))
+                             : opening + txn;
+    if(hasClose && (iTdr>=0||iTcr>=0) && Math.abs(opening+txn-closing)>0.5) drift++;
+    const prior = openIsPy ? opening
+                : (iPbal>=0 ? num(row[iPbal]) : cell(row,iPdr)-cell(row,iPcr));
+    const dr = closing>0?r2(closing):0, cr = closing<0?r2(-closing):0;
+    const pdr = prior>0?r2(prior):0,   pcr = prior<0?r2(-prior):0;
     if(!dr&&!cr&&!pdr&&!pcr){ skipped++; continue; }
     out.push({id:uid(), code:iCode>=0?String(row[iCode]==null?"":row[iCode]).trim():"",
-      name, dr:r2(dr), cr:r2(cr), pdr:r2(pdr), pcr:r2(pcr), map:autoMapOne(name,S.fw)});
+      name, dr, cr, pdr, pcr, map:autoMapOne(name,S.fw)});
   }
+  if(drift) setTimeout(()=>toast(drift+" ledgers where opening plus transactions does not equal the closing balance — the closing figure has been used.", true), 2600);
   if(!out.length){ toast("No ledger rows were found — check the first data row.", true); return; }
   S.tb = $("impMode").value==="append" ? S.tb.concat(out) : out;
   $("impModal").hidden=true;
@@ -3428,13 +3610,13 @@ function renderAud(){
         <label class="f">Performance materiality (% of overall)<input data-aud="pm" type="number" step="1" value="${esc(a.pm)}"></label>
         <label class="f">Clearly trivial (% of overall)<input data-aud="ct" type="number" step="1" value="${esc(a.ct)}"></label>
       </div>
-      <table class="fs" style="max-width:640px"><tbody>
+      <div class="scrollx"><table class="fs" style="max-width:640px"><tbody>
         <tr class="it"><td class="l">${esc(mat.basisLabel)}</td><td class="n">${dispRaw(mat.basisValue)}</td></tr>
         <tr class="it"><td class="l">Percentage applied</td><td class="n">${mat.pct}%</td></tr>
         <tr class="tot"><td class="l">Overall materiality</td><td class="n">${dispRaw(mat.om)}</td></tr>
         <tr class="it"><td class="l">Performance materiality at ${a.pm}%</td><td class="n">${dispRaw(mat.pm)}</td></tr>
         <tr class="tot grand"><td class="l">Clearly trivial threshold at ${a.ct}%</td><td class="n">${dispRaw(mat.ct)}</td></tr>
-      </tbody></table>
+      </tbody></table></div>
       <p class="hint" style="margin-top:14px">Benchmarks available for this engagement: ${MAT_BASES.map(b=>esc(b.label)+" "+dispRaw(mat.vals[b.id])).join(" &middot; ")}.
       Performance materiality reduces overall materiality to allow for undetected misstatements; anything below the clearly trivial threshold need not be accumulated.</p></div>`;
   } else if(curAud==="anal"){
