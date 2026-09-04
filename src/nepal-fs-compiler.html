@@ -1970,7 +1970,9 @@ function compute(){
   if(Math.abs(intPaid)>EPS && !intInFin){ cfRows.push(R("item","Interest paid",-intPaid,null)); cfRows[cfRows.length-1].inp={k:"intPaid",neg:1}; }
   if(Math.abs(taxPaid)>EPS){ cfRows.push(R("item","Income taxes paid",-taxPaid,null)); cfRows[cfRows.length-1].inp={k:"taxPaid",neg:1}; }
   const cfOtherO = (o.other||[]).filter(x=>x.sec==="O").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="O"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other operating item",num(x.amt),null)));
+  (o.other||[]).filter(x=>x.sec==="O" && (String(x.label||"").trim() || num(x.amt)))
+    .forEach(x=>{ cfRows.push(R("item",x.label||"Other operating item",num(x.amt),null));
+      cfRows[cfRows.length-1].added=true; });
   const opTailTo=cfRows.length-1;
   const netOp = r2(cashGen - (intInFin?0:intPaid) - taxPaid + cfOtherO);
   const iCfOp=cTot("Net cash generated from / (used in) operating activities",netOp,null,"",
@@ -1993,7 +1995,9 @@ function compute(){
   if(Math.abs(intRecv)>EPS){ cfRows.push(R("item","Interest received",intRecv,null)); cfRows[cfRows.length-1].inp={k:"intRecv"}; }
   if(Math.abs(divRecv)>EPS){ cfRows.push(R("item","Dividends received",divRecv,null)); cfRows[cfRows.length-1].inp={k:"divRecv"}; }
   const cfOtherI = (o.other||[]).filter(x=>x.sec==="I").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="I"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other investing item",num(x.amt),null)));
+  (o.other||[]).filter(x=>x.sec==="I" && (String(x.label||"").trim() || num(x.amt)))
+    .forEach(x=>{ cfRows.push(R("item",x.label||"Other investing item",num(x.amt),null));
+      cfRows[cfRows.length-1].added=true; });
   const invTo=cfRows.length-1;
   const netInv = r2(-ppeCash - intanAdd + dispPpe + invMove + dispInv + intRecv + divRecv + cfOtherI);
   const iCfInv=cTot("Net cash generated from / (used in) investing activities",netInv,null,"",
@@ -2012,7 +2016,9 @@ function compute(){
   if(intInFin && Math.abs(intPaid)>EPS){ cfRows.push(R("item","Interest paid",-intPaid,null)); cfRows[cfRows.length-1].inp={k:"intPaid",neg:1}; }
   if(Math.abs(divPaid)>EPS){ cfRows.push(R("item","Dividends paid",-divPaid,null)); cfRows[cfRows.length-1].inp={k:"divPaid",neg:1}; }
   const cfOtherF = (o.other||[]).filter(x=>x.sec==="F").reduce((s,x)=>s+num(x.amt),0);
-  (o.other||[]).filter(x=>x.sec==="F"&&num(x.amt)).forEach(x=>cfRows.push(R("item",x.label||"Other financing item",num(x.amt),null)));
+  (o.other||[]).filter(x=>x.sec==="F" && (String(x.label||"").trim() || num(x.amt)))
+    .forEach(x=>{ cfRows.push(R("item",x.label||"Other financing item",num(x.amt),null));
+      cfRows[cfRows.length-1].added=true; });
   const finTo=cfRows.length-1;
   const netFin = r2(eqIssue + borrowMove - leasePaid - (intInFin?intPaid:0) - divPaid + cfOtherF);
   const iCfFin=cTot("Net cash generated from / (used in) financing activities",netFin,null,"",
@@ -2595,7 +2601,8 @@ function rowsHTML(rows, showPY, editPY){
     if(r.type==="sub"){ h+=`<tr class="sub"><td colspan="${showPY?4:3}">${esc(r.label)}</td></tr>`; continue; }
     const cls = r.type==="tot" ? "tot"+(r.cls==="grand"?" grand":"") : "it";
     const dcls = r.cls==="diff" ? " class=\"diffbad\"" : "";
-    h += `<tr class="${cls}"><td class="l"${dcls}>${esc(r.label)}</td>
+    const rmv = (editPY && r.added) ? ` <button class="rowdel" data-cfdel="${esc(r.label)}" title="Remove this line" style="padding:0 4px">&times;</button>` : "";
+    h += `<tr class="${cls}"><td class="l"${dcls}>${esc(r.label)}${rmv}</td>
       <td class="note">${r.note||""}</td>
       <td class="n"${dcls}>${r.cy===null||r.cy===undefined?"":disp(r.cy)}</td>`;
     if(showPY) h += editPY
@@ -2644,6 +2651,13 @@ function renderFs(){
     h = `<div class="btnrow" style="margin-bottom:14px;max-width:940px;margin-left:auto;margin-right:auto">
         <button class="btn sm ${editing?"pri":""}" id="btnCfPy">${editing?"Done editing comparatives":(hasPy?"Edit comparative figures":"Enter comparative figures")}</button>
         ${hasPy?'<button class="btn sm" id="btnCfPyClear">Clear comparatives</button>':""}
+        ${editing?`<span style="display:inline-flex;gap:6px;align-items:center;margin-left:6px">
+          <input id="cfNewLabel" placeholder="Add a line, for example Dividends paid"
+            style="min-width:260px;padding:6px 9px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
+          <select id="cfNewSec" style="padding:6px 8px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
+            <option value="O">Operating</option><option value="I">Investing</option><option value="F">Financing</option>
+          </select>
+          <button class="btn sm pri" id="cfNewAdd">Add line</button></span>`:""}
         <span class="hint">${showPY&&!cfPY
           ? "Type the comparative column straight into the boxes, taking the figures from last year's signed cash flow. What can be derived from the prior year profit and loss is filled in already; the working capital lines cannot be, because they need balances from the year before that. Leave a line empty if last year did not show it, and the subtotals add themselves up."
           : "The current year is derived from the trial balance and schedules; comparatives are as entered from the prior year signed accounts."}</span></div>
@@ -2663,6 +2677,22 @@ function renderFs(){
     S.noteText=S.noteText||{}; S.noteText[el.dataset.note]=el.value; persist(); });
   document.querySelectorAll("[data-noterev]").forEach(b=>b.onclick=()=>{
     delete S.noteText[b.dataset.noterev]; persist(); renderFs(); toast("Reverted to the prepared wording."); });
+  if($("cfNewAdd")) $("cfNewAdd").onclick=()=>{
+    const lab=String(($("cfNewLabel")||{}).value||"").trim();
+    if(!lab){ toast("Give the line a name first.", true); return; }
+    S.cf.other=S.cf.other||[];
+    if(S.cf.other.some(x=>String(x.label||"").trim().toLowerCase()===lab.toLowerCase())){
+      toast("There is already a line called that.", true); return; }
+    S.cf.other.push({label:lab, sec:($("cfNewSec")||{}).value||"O", amt:0});
+    persist(); renderFs();
+    toast('"'+lab+'" added. Type its comparative in the column on the right.');
+  };
+  document.querySelectorAll("[data-cfdel]").forEach(b=>b.onclick=()=>{
+    const lab=b.dataset.cfdel;
+    S.cf.other=(S.cf.other||[]).filter(x=>String(x.label||"").trim()!==lab);
+    if(S.cf.pyMap) delete S.cf.pyMap[lab];
+    persist(); renderFs(); toast("Line removed.");
+  });
   if($("btnCfPyClear")) $("btnCfPyClear").onclick=()=>{ S.cf.pyMap={}; persist(); renderFs(); toast("Comparative figures cleared."); };
   if($("btnCfPy")) $("btnCfPy").onclick=()=>{
     if(!S.cf.editPY && !Object.keys(S.cf.pyMap||{}).length){
