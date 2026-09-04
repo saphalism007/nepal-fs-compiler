@@ -15,6 +15,7 @@ catch { console.error("jsdom is not installed.  Run:  npm install jsdom"); proce
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HTML = path.join(HERE, "nepal-fs-compiler.html");
 const FIXTURE = path.join(HERE, "..", "sample", "trial-balance-opening-transactions-closing.xlsx");
+const FIXTURE2 = path.join(HERE, "..", "sample", "trial-balance-nfrs-opening-transactions-closing.xlsx");
 let fail = 0, total = 0;
 const ok = (n, c, d = "") => { total++; if (!c) fail++;
   console.log(`  ${c ? "PASS" : "FAIL"}  ${n}${!c && d ? "   <- " + d : ""}`); };
@@ -138,6 +139,62 @@ console.log("\n=== restricted funds are kept out of free reserves ===");
   eq("unspent restricted grant sits in the restricted fund", r.fundRes, 400000);
   eq("unrestricted fund carries only its own surplus", r.fundUnres, 100000);
   eq("position still balances", r.sofp, 0);
+}
+
+
+/* ------------------------------------------------------------------ */
+console.log("\n=== a real NFRS chart of accounts, opening/transactions/closing ===");
+{
+  const { ev } = await boot();
+  const b64 = fs.readFileSync(FIXTURE2).toString("base64");
+  for (const fw of ["SME", "NPO"]) {
+    ev(`localStorage.clear(); S=DEF(); applyFw(${JSON.stringify("PLACE")});`.replace("PLACE", fw));
+    const r = JSON.parse(await ev(`(async()=>{
+      const bin=atob(${JSON.stringify(b64)}); const u=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+      openImport(await readXlsx(u.buffer));
+      document.getElementById("impMode").value="replace"; runImport();
+      const t=tbTotals(), m=M();
+      return JSON.stringify({cy:t.dr, py:t.pdr, unmapped:t.unmapped,
+        assetsCY:m.tot.assetsC, assetsPY:m.tot.assetsP, rev:m.tot.revC,
+        profit:m.tot.pftC, eq:m.tot.eqTotC, sofp:m.tot.sofpDiff, sofpPY:m.tot.sofpDiffP});})()`));
+    console.log(` ${fw}`);
+    eq("  current year total", r.cy, 15100000);
+    eq("  comparative total", r.py, 7500000);
+    ok("  nothing unmapped", r.unmapped === 0, r.unmapped + " unmapped");
+    eq("  total assets", r.assetsCY, 8600000);
+    eq("  comparative assets", r.assetsPY, 7500000);
+    eq("  revenue", r.rev, 8000000);
+    eq("  profit", r.profit, 1500000);
+    eq("  position balances", r.sofp, 0);
+    eq("  comparative balances", r.sofpPY, 0);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+console.log("\n=== standard account heads never cross statements ===");
+{
+  const { ev } = await boot();
+  const want = [["Cost of Sales","COS"],["Revenue from Contracts with Customers","REV"],
+    ["Sales","REV"],["Purchases","COS"],["Long Term Borrowings","NCL"],
+    ["Income Tax Expense","TAX"],["Current Tax Liabilities","CL"],
+    ["Finance Costs","FIN"],["Finance Income","FININC"],
+    ["Employee Benefit Expenses","OPEX"],["Trade and Other Payables","CL"],
+    ["Trade and Other Receivables","CA"],["Contract Liabilities","CL"],["Contract Assets","CA"]];
+  for (const [n, grp] of want) {
+    const g = ev(`(()=>{const id=autoMapOne(${JSON.stringify(n)},"SME"); return id?CATBY[id].grp:"";})()`);
+    ok(`"${n}" sits in ${grp}`, g === grp, "got " + (g || "unmapped"));
+  }
+  /* and an expense must never land in income under any framework */
+  for (const fw of ["NFRS","SME","ME","NPO"]) {
+    const bad = ev(`(()=>{const out=[];
+      for(const n of ["Cost of Sales","Purchases","Employee Benefit Expenses","Depreciation and Amortization","Finance Costs"]){
+        const id=autoMapOne(n,${JSON.stringify(fw)});
+        const g=id?CATBY[id].grp:"";
+        if(["REV","OI","FININC","CA","NCA"].includes(g)) out.push(n+"->"+g);
+      } return JSON.stringify(out);})()`);
+    ok(`no expense becomes income or an asset under ${fw}`, bad === "[]", bad);
+  }
 }
 
 console.log(`\n${fail ? fail + " of " + total + " FAILED" : "all " + total + " checks passed"}\n`);

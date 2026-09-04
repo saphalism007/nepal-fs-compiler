@@ -112,6 +112,26 @@ self.addEventListener("fetch", e => {
   const inScope = url.origin === location.origin && url.pathname.startsWith(SCOPE);
   const isFont = /fonts\\.(googleapis|gstatic)\\.com$/.test(url.hostname);
   if (!inScope && !isFont) return;
+
+  /* The app itself is fetched from the network first, so a correction reaches
+     people the next time they open it rather than waiting for a cache to expire.
+     The cached copy is kept up to date behind that and answers when offline.
+     Fonts and icons rarely change and are served from the cache first. */
+  const isApp = inScope && (req.mode === "navigate" || /\\/(index\\.html)?$/.test(url.pathname));
+  if (isApp) {
+    e.respondWith(
+      fetch(req, { cache: "no-store" })
+        .then(resp => {
+          if (resp && resp.ok) {
+            const copy = resp.clone();
+            caches.open(CACHE).then(c => { c.put("./index.html", copy.clone()); c.put("./", copy); }).catch(() => {});
+          }
+          return resp;
+        })
+        .catch(() => caches.match("./index.html").then(hit => hit || caches.match("./")))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(req).then(hit => hit || fetch(req).then(resp => {
       if (resp && (resp.ok || resp.type === "opaque")) {

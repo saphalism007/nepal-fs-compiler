@@ -110,7 +110,7 @@ label.f > input:focus,label.f > select:focus{border-color:var(--green-2)}
 
 /* ---------- data grids ---------- */
 .gwrap{overflow:auto;border:1px solid var(--rule);border-radius:8px;background:var(--surface);max-height:64vh}
-table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+table.g{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:13px}
 table.g th{position:sticky;top:0;z-index:5;background:var(--surface-3);text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 9px;border-bottom:1px solid var(--rule-strong);white-space:nowrap}
 table.g td{padding:0;border-bottom:1px solid var(--rule-2);vertical-align:middle}
 table.g tbody tr:hover td{background:var(--surface-2)}
@@ -228,8 +228,14 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
     @media (max-width:900px){ .rail{padding-top:calc(env(safe-area-inset-top) + 4px)} }
   }
 }
+#printPack{display:none}
+body.printing #printPack{display:block}
 @media print{
-
+  body.printing > .app{display:none!important}
+  #printPack .sheet{page-break-after:always}
+  #printPack .sheet:last-child{page-break-after:auto}
+  .scrollx{overflow:visible!important}
+  table.fs{min-width:0!important}
   .rail,.topbar,.docbar,.pane-head,.subtabs{display:none!important}
   body{background:#fff}
   .sheet{box-shadow:none;border:0;max-width:none;padding:0;page-break-after:always}
@@ -441,7 +447,9 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
         <h3>Workbook contents</h3>
         <div id="expList" class="hint"></div>
         <div class="btnrow" style="margin-top:16px">
-          <button class="btn pri" id="btnXlsx">Build Excel workbook (.xlsx)</button>
+          <button class="btn pri" id="btnXlsx">Export to Excel (.xlsx)</button>
+          <button class="btn pri" id="btnDocx">Export to Word (.docx)</button>
+          <button class="btn" id="btnPdf">Export to PDF</button>
           <button class="btn" id="btnJson">Save engagement file (.json)</button>
         </div>
         <p class="hint" style="margin-top:12px" id="expNote"></p>
@@ -645,7 +653,7 @@ const CAT_RAW = [
 /* ---- income ---- */
 ["rev_goods","Revenue from sale of goods","REV","opl","NFRS,SME,ME"],
 ["rev_serv","Revenue from rendering of services","REV","opl","NFRS,SME,ME"],
-["rev_contract","Revenue from construction contracts","REV","opl","NFRS,SME"],
+["rev_contract","Revenue from contracts with customers","REV","opl","NFRS,SME"],
 ["rev_other_op","Other operating revenue","REV","opl","NFRS,SME,ME"],
 ["rev_disc","Discounts, returns and rebates","REV","opl","NFRS,SME,ME"],
 ["inc_grant_u","Grant income — unrestricted","REV","opl","NPO"],
@@ -665,6 +673,7 @@ const CAT_RAW = [
 ["oi_writeback","Liabilities and provisions written back","OI","opl",ALL],
 ["fin_income","Finance income","FININC","invinc",ALL],
 /* ---- expenses ---- */
+["cos_sales","Cost of sales","COS","opl","NFRS,SME,ME"],
 ["cos_material","Cost of materials consumed","COS","opl","NFRS,SME,ME"],
 ["cos_purchase","Purchases of stock-in-trade","COS","opl","NFRS,SME,ME"],
 ["cos_chg","Changes in inventories of finished goods and work in progress","COS","opl","NFRS,SME,ME"],
@@ -801,7 +810,7 @@ cl_div:["unpaid dividend","dividend payable","unclaimed dividend"],
 cl_other:["other current liabilit","other liabilit","suspense"],
 rev_goods:["sales","sale of goods","revenue from sale","turnover","gross sales","trading revenue","export sales","local sales"],
 rev_serv:["service income","service revenue","consultancy income","professional fee income","commission income","fee income","revenue from service"],
-rev_contract:["contract revenue","construction revenue","work certified"],
+rev_contract:["contract revenue","construction revenue","work certified","revenue from operation"],
 rev_other_op:["other operating revenue","scrap sales","freight recovered","other operating income"],
 rev_disc:["sales return","discount allowed","rebate","sales discount"],
 inc_grant_u:["!unrestricted grant","!general grant","!core funding","!untied grant","core funding"],
@@ -859,6 +868,52 @@ oci_dbp:["actuarial gain","actuarial loss","remeasurement of defined"],
    leading "!" is decisive and outranks any longer ordinary match. Keywords are
    normalised exactly as ledger names are, so punctuation in either does not matter. */
 const kwNorm = t => (" "+String(t).toLowerCase().replace(/[^a-z0-9&]+/g," ").trim()+" ").replace(/\s+/g," ");
+/* Standard NFRS and NAS account heads, marked decisive so that a longer or more
+   common word inside the caption cannot capture it. Ordered by the statement they
+   belong to; these are matched before any of the descriptive keywords above. */
+const KW_STD = {
+nca_ppe:["property plant and equipment","property, plant and equipment","tangible fixed asset","fixed assets"],
+nca_cwip:["capital work in progress"], nca_rou:["right of use asset","right-of-use asset"],
+nca_intan:["intangible asset"], nca_gw:["goodwill"], nca_ip:["investment property"],
+nca_dta:["deferred tax asset"], nca_assoc:["investment in associate","investment in joint venture"],
+nca_sub:["investment in subsidiary","investment in subsidiaries"],
+ca_inv:["inventories","inventory","closing inventory"],
+ca_tr:["trade receivable","trade and other receivable","trade debtors","accounts receivable"],
+ca_contract_a:["contract asset"], ca_or:["other receivable","other current asset"],
+ca_cce:["cash and cash equivalent","cash and bank balance"],
+ca_ctax:["current tax asset","advance income tax"],
+eq_share:["share capital","equity share capital","paid up share capital"],
+eq_prem:["share premium","securities premium"], eq_re:["retained earnings","accumulated surplus"],
+eq_other_r:["other equity","other components of equity","other reserves"],
+ncl_borrow:["long term borrowing","long-term borrowing","non current borrowing","borrowings","secured loan"],
+ncl_lease:["lease liability non current","non current lease liability"],
+ncl_dtl:["deferred tax liability","deferred tax liabilities"],
+ncl_prov:["long term provision","non current provision"],
+cl_tp:["trade payable","trade and other payable","accounts payable","trade creditors"],
+cl_contract_l:["contract liability","contract liabilities"],
+cl_stborrow:["short term borrowing","current borrowing"],
+cl_ctax:["current tax liability","current tax liabilities"],
+cl_prov:["short term provision","current provision","provisions"],
+cl_op:["other payable","other current liability","other current liabilities"],
+rev_contract:["revenue from contracts with customers","revenue from contract with customer",
+  "revenue from operations","contract revenue"],
+rev_goods:["revenue from sale of goods","sale of goods","sales revenue"],
+rev_serv:["revenue from services","sale of services","rendering of services"],
+oi_other:["other income","other operating income"],
+fin_income:["finance income","interest income"],
+cos_sales:["cost of sales","cost of revenue","cost of goods sold","cogs","cost of service"],
+cos_chg:["changes in inventories of finished goods","changes in inventories"],
+exp_emp:["employee benefit expense","employee benefits expense","staff cost","personnel expense"],
+exp_dep:["depreciation and amortization","depreciation and amortisation","depreciation expense",
+  "amortisation expense","amortization expense","depreciation & amortization"],
+exp_imp:["impairment loss"], exp_other:["other expenses","other operating expense","administrative expenses"],
+fin_cost:["finance cost","finance expense","finance charges"],
+tax_cur:["income tax expense","current tax expense","current tax"],
+tax_def:["deferred tax expense","deferred tax income","deferred tax charge"],
+inc_grant_r:["restricted grant income"], inc_grant_u:["unrestricted grant income"],
+exp_prog:["programme expenses","program expenses","project expenditure"]
+};
+for(const id in KW_STD){ KW[id]=(KW[id]||[]).concat(KW_STD[id].map(k=>"!"+k)); }
 const KW_LIST = [];
 for(const id in KW) for(const k of KW[id]){
   const decisive = k.charAt(0)==="!";
@@ -1095,6 +1150,7 @@ const ID_FALLBACK = {
   ca_fvtpl:"ca_stinv", ca_contract_a:"ca_or", ca_restr:"ca_cce", ca_hfs:"ca_or",
   ncl_dtl:"ncl_other", ncl_lease:"ncl_borrow", ncl_deb:"ncl_borrow",
   cl_lease_c:"cl_cpltd", cl_contract_l:"cl_advcust", cl_advcust:"cl_op",
+  cos_sales:"cos_material", cos_material:"cos_direct", cos_purchase:"cos_direct",
   tax_def:"tax_cur", tax_prior:"tax_cur", assoc_share:"oi_other", rev_contract:"rev_serv"
 };
 function fallbackFor(id, fw){
@@ -1262,10 +1318,10 @@ function renderTb(){
 
   const rows = onlyUnmapped ? S.tb.filter(r=>!r.map) : S.tb;
   const opts = mapOptions();
-  const head = `<thead><tr><th style="width:88px">Code</th><th style="min-width:220px">Ledger account</th>
+  const head = `<thead><tr><th style="width:88px">Code</th><th style="min-width:340px">Ledger account</th>
     <th class="num" style="width:118px">Debit</th><th class="num" style="width:118px">Credit</th>
     <th class="num" style="width:118px">${esc(S.meta.pyLabel||"PY")} Dr</th><th class="num" style="width:118px">${esc(S.meta.pyLabel||"PY")} Cr</th>
-    <th style="min-width:250px">Financial statement line</th><th style="width:34px"></th></tr></thead>`;
+    <th style="min-width:300px">Financial statement line</th><th style="width:34px"></th></tr></thead>`;
   const body = rows.map(r=>`<tr data-id="${r.id}" class="${r.map?"":"unmapped"}">
     <td><input class="code" data-k="code" value="${esc(r.code)}"></td>
     <td><input data-k="name" value="${esc(r.name)}" title="${esc(r.name)}"></td>
@@ -2315,7 +2371,7 @@ function STD_POLICIES(){
   p.push("A provision is recognised when there is a present obligation as a result of a past event, it is probable that an outflow of resources will be required to settle the obligation, and the amount can be estimated reliably.");
   p.push("Use of estimates and judgements:");
   p.push("The preparation of financial statements requires management to make judgements, estimates and assumptions that affect the application of accounting policies and the reported amounts of assets, liabilities, income and expenses. Actual results may differ from these estimates. The estimates with the most significant effect are the useful lives of property, plant and equipment, the allowance for expected credit losses, the measurement of employee benefit obligations and the recoverability of deferred tax assets.");
-  return p.join("\n");
+  return p.join("\n\n");
 }
 
 /* ---------- 18. STATEMENT RENDERING ---------- */
@@ -2439,7 +2495,7 @@ function notesHTML(m){
     h += `<h4>${b.no}. &nbsp;${esc(b.title)}</h4>`;
     if(b.lead) h += `<p>${esc(b.lead)}</p>`;
     if(b.kind==="text"){
-      for(const para of String(b.text).split(/\n\n+|\n(?=[A-Z][^\n]*:$)/)){
+      for(const para of String(b.text).split(/\n+/)){
         const t=para.trim(); if(!t) continue;
         if(/:$/.test(t) && t.length<70) h+=`<p style="font-weight:600;margin-top:12px;color:var(--ink)">${esc(t.replace(/:$/,""))}</p>`;
         else h+=`<p>${esc(t)}</p>`;
@@ -2587,7 +2643,7 @@ async function deflateRaw(u8){
     return out.length < u8.length ? out : null;
   }catch(e){ return null; }
 }
-async function zipFiles(entries){
+async function zipFiles(entries, mime){
   const now = new Date();
   const dosTime = ((now.getHours()<<11) | (now.getMinutes()<<5) | (now.getSeconds()>>1)) & 0xFFFF;
   const dosDate = (((now.getFullYear()-1980)<<9) | ((now.getMonth()+1)<<5) | now.getDate()) & 0xFFFF;
@@ -2623,7 +2679,7 @@ async function zipFiles(entries){
   ev.setUint16(8, centrals.length, true); ev.setUint16(10, centrals.length, true);
   ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
   return new Blob(locals.concat(centrals, [eocd]),
-    {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    {type: mime || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
 }
 async function buildWorkbook(sheets){
   const F = [];
@@ -3675,6 +3731,220 @@ function excTable(list){
 </script>
 
 <script>
+/* ---------- 28. WORD EXPORT (WordprocessingML, same zip writer) ---------- */
+const W = {
+  esc: t => String(t==null?"":t).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,"")
+             .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"),
+  /* half-points for sizes, twentieths of a point for widths */
+  run: (t,o={}) => `<w:r><w:rPr>${o.b?"<w:b/>":""}${o.i?"<w:i/>":""}`
+      + `<w:rFonts w:ascii="${o.serif?"Georgia":"Calibri"}" w:hAnsi="${o.serif?"Georgia":"Calibri"}"/>`
+      + `<w:sz w:val="${o.sz||20}"/><w:szCs w:val="${o.sz||20}"/>`
+      + (o.color?`<w:color w:val="${o.color}"/>`:"")
+      + `</w:rPr><w:t xml:space="preserve">${W.esc(t)}</w:t></w:r>`,
+  p: (t,o={}) => `<w:p><w:pPr>${o.align?`<w:jc w:val="${o.align}"/>`:""}`
+      + `<w:spacing w:before="${o.before||0}" w:after="${o.after===undefined?100:o.after}" w:line="${o.line||260}" w:lineRule="auto"/>`
+      + (o.indent?`<w:ind w:left="${o.indent}"/>`:"")
+      + (o.keep?"<w:keepNext/>":"")
+      + `</w:pPr>${t===""?"":W.run(t,o)}</w:p>`,
+  cell: (t,w_,o={}) => `<w:tc><w:tcPr><w:tcW w:w="${w_}" w:type="dxa"/>`
+      + `<w:tcBorders>${o.top?`<w:top w:val="single" w:sz="6" w:color="3D4741"/>`:""}`
+      + `${o.bottom?`<w:bottom w:val="${o.bottom}" w:sz="6" w:color="3D4741"/>`:""}</w:tcBorders>`
+      + (o.fill?`<w:shd w:val="clear" w:fill="${o.fill}"/>`:"")
+      + `<w:vAlign w:val="bottom"/></w:tcPr>`
+      + `<w:p><w:pPr><w:jc w:val="${o.align||"left"}"/><w:spacing w:before="20" w:after="20" w:line="240" w:lineRule="auto"/>`
+      + (o.indent?`<w:ind w:left="${o.indent}"/>`:"")+`</w:pPr>`
+      + (t===""?"":W.run(t,o))+`</w:p></w:tc>`,
+  row: cells => `<w:tr><w:trPr><w:cantSplit/></w:trPr>${cells.join("")}</w:tr>`,
+  table: (rows,grid) => `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>`
+      + `<w:tblLayout w:type="fixed"/><w:tblCellMar>`
+      + `<w:left w:w="40" w:type="dxa"/><w:right w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr>`
+      + `<w:tblGrid>${grid.map(g=>`<w:gridCol w:w="${g}"/>`).join("")}</w:tblGrid>${rows.join("")}</w:tbl>`,
+  br: () => `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`
+};
+function docStmt(title, sub, rows, showPY){
+  const grid = showPY ? [4700,700,1750,1750] : [5900,900,2100];
+  const out=[];
+  out.push(W.p(S.meta.entity||"Untitled Entity",{b:1,sz:30,align:"center",serif:1,after:40}));
+  const line=[S.meta.addr,S.meta.regno?"Registration No. "+S.meta.regno:"",S.meta.pan?"PAN "+S.meta.pan:""].filter(Boolean).join("   ·   ");
+  if(line) out.push(W.p(line,{sz:16,align:"center",color:"6A756E",after:180}));
+  out.push(W.p(title,{b:1,sz:24,align:"center",serif:1,after:20}));
+  out.push(W.p(sub,{sz:18,align:"center",color:"3D4741",after:60}));
+  out.push(W.p(unitNote(),{i:1,sz:16,align:"right",after:60}));
+  const hdr=[W.cell("Particulars",grid[0],{b:1,sz:16,bottom:"single",fill:"EDF1EE"}),
+             W.cell("Note",grid[1],{b:1,sz:16,align:"center",bottom:"single",fill:"EDF1EE"}),
+             W.cell(S.meta.cyLabel||"Current",grid[2],{b:1,sz:16,align:"right",bottom:"single",fill:"EDF1EE"})];
+  if(showPY) hdr.push(W.cell(S.meta.pyLabel||"Prior",grid[3],{b:1,sz:16,align:"right",bottom:"single",fill:"EDF1EE"}));
+  const trs=[W.row(hdr)];
+  for(const r of rows){
+    if(r.type==="blank"){ trs.push(W.row(grid.map(g=>W.cell("",g)))); continue; }
+    if(r.type==="sec"||r.type==="sub"){
+      trs.push(W.row(grid.map((g,i)=> i===0 ? W.cell(r.label,g,{b:1,sz:17}) : W.cell("",g)))); continue; }
+    const isTot=r.type==="tot", grand=r.cls==="grand";
+    const o={b:isTot, top:isTot, bottom:grand?"double":null};
+    const cells=[W.cell(r.label,grid[0],{...o, indent:isTot?0:150}),
+                 W.cell(r.note||"",grid[1],{...o, align:"center"}),
+                 W.cell(r.cy==null?"":disp(r.cy),grid[2],{...o, align:"right"})];
+    if(showPY) cells.push(W.cell(r.py==null?"":disp(r.py),grid[3],{...o, align:"right"}));
+    trs.push(W.row(cells));
+  }
+  out.push(W.table(trs,grid));
+  out.push(W.p("",{after:300}));
+  const m=S.meta, half=Math.round(grid.reduce((a,b)=>a+b,0)/2);
+  const sig=(l,r_)=>W.row([W.cell(l,half,{sz:17,top:1}), W.cell(r_,half,{sz:17,align:"right",top:1})]);
+  out.push(W.p("For and on behalf of the Board",{b:1,sz:17,before:200,after:260}));
+  out.push(W.table([sig(m.sig1||"____________________", m.sig2||"____________________"),
+    W.row([W.cell("Director",half,{sz:15,color:"6A756E"}),W.cell("Director",half,{sz:15,align:"right",color:"6A756E"})]),
+    W.row([W.cell("",half),W.cell("",half)]),
+    sig(m.sig3||"____________________", m.partner||"____________________"),
+    W.row([W.cell("Chief Executive Officer",half,{sz:15,color:"6A756E"}),
+           W.cell(m.auditor||"Auditor",half,{sz:15,align:"right",color:"6A756E"})])],[half,half]));
+  out.push(W.p("Place: "+(m.addr||"__________")+"        Date: "+(m.approval?fmtAd(m.approval):"__________"),
+    {sz:16,color:"6A756E",before:200}));
+  return out.join("");
+}
+function docNotes(m){
+  const blocks=noteBlocks(m), showPY=S.meta.first!=="yes", out=[];
+  out.push(W.p(S.meta.entity||"Untitled Entity",{b:1,sz:30,align:"center",serif:1,after:40}));
+  out.push(W.p("Notes to the financial statements",{b:1,sz:24,align:"center",serif:1,after:20}));
+  out.push(W.p(periodText("for"),{sz:18,align:"center",color:"3D4741",after:200}));
+  for(const b of blocks){
+    out.push(W.p(b.no+".   "+b.title,{b:1,sz:20,serif:1,before:220,after:80,keep:1}));
+    if(b.lead) out.push(W.p(b.lead,{sz:18,after:100}));
+    if(b.kind==="text"){
+      for(const para of String(b.text).split(/\n+/)){
+        const t=para.trim(); if(!t) continue;
+        if(/:$/.test(t) && t.length<70) out.push(W.p(t.replace(/:$/,""),{b:1,sz:18,before:120,after:40}));
+        else out.push(W.p(t,{sz:18,after:100}));
+      }
+    } else if(b.kind==="rows"){
+      const grid=showPY?[5000,2000,2000]:[6500,2500];
+      const hdr=[W.cell("Particulars",grid[0],{b:1,sz:16,bottom:"single"}),
+                 W.cell(S.meta.cyLabel||"Current",grid[1],{b:1,sz:16,align:"right",bottom:"single"})];
+      if(showPY) hdr.push(W.cell(S.meta.pyLabel||"Prior",grid[2],{b:1,sz:16,align:"right",bottom:"single"}));
+      const trs=[W.row(hdr)];
+      for(const r of b.rows){
+        const c=[W.cell(r.label,grid[0],{sz:17}),W.cell(disp(r.cy),grid[1],{sz:17,align:"right"})];
+        if(showPY) c.push(W.cell(disp(r.py),grid[2],{sz:17,align:"right"}));
+        trs.push(W.row(c));
+      }
+      const t=[W.cell("Total",grid[0],{b:1,sz:17,top:1,bottom:"double"}),
+               W.cell(disp(b.total.cy),grid[1],{b:1,sz:17,align:"right",top:1,bottom:"double"})];
+      if(showPY) t.push(W.cell(disp(b.total.py),grid[2],{b:1,sz:17,align:"right",top:1,bottom:"double"}));
+      trs.push(W.row(t));
+      out.push(W.table(trs,grid));
+    } else if(b.kind==="matrix" || b.kind==="multi"){
+      const parts = b.kind==="matrix" ? [{sub:null,matrix:b.matrix}] : b.parts;
+      for(const pt of parts){
+        if(pt.sub) out.push(W.p(pt.sub,{b:1,sz:18,before:140,after:60}));
+        if(pt.matrix){
+          const mx=pt.matrix, n=mx.head.length;
+          const wide=Math.floor(9400/n), grid=mx.head.map((_,i)=> i===0?Math.floor(wide*1.6):Math.floor((9400-wide*1.6)/(n-1)));
+          const trs=[W.row(mx.head.map((h,i)=>W.cell(h,grid[i],{b:1,sz:13,bottom:"single",align:mx.types[i]==="n"?"right":"left"})))];
+          for(const row of mx.body)
+            trs.push(W.row(row.map((v,i)=>W.cell(mx.types[i]==="n"?disp(v):String(v),grid[i],{sz:14,align:mx.types[i]==="n"?"right":"left"}))));
+          trs.push(W.row(mx.total.map((v,i)=>W.cell(mx.types[i]==="n"?disp(v):String(v),grid[i],
+            {b:1,sz:14,top:1,bottom:"double",align:mx.types[i]==="n"?"right":"left"}))));
+          out.push(W.table(trs,grid));
+        } else if(pt.rows){
+          const grid=[6500,2500];
+          out.push(W.table(pt.rows.map(r=>W.row([
+            W.cell(r.label,grid[0],{sz:17,b:!!r.bold,top:!!r.bold}),
+            W.cell(r.cy==null?"":disp(r.cy),grid[1],{sz:17,align:"right",b:!!r.bold,top:!!r.bold})])),grid));
+        }
+      }
+    }
+  }
+  return out.join("");
+}
+async function buildDocx(){
+  const m=M(), f=m.f, showPY=S.meta.first!=="yes";
+  const parts=[];
+  parts.push(docStmt(f.sofpTitle, periodText("at"), m.sofpRows, showPY));
+  parts.push(docStmt(f.plTitle, periodText("for"), m.plRows, showPY));
+  if(f.stmts.includes("SOCE")){
+    const s_=m.soce, grid=[3200].concat(s_.cols.map(()=>Math.floor(6200/(s_.cols.length+1))))
+      .concat([Math.floor(6200/(s_.cols.length+1))]);
+    const out=[];
+    out.push(W.p(S.meta.entity||"",{b:1,sz:30,align:"center",serif:1,after:40}));
+    out.push(W.p(f.equityStmt,{b:1,sz:24,align:"center",serif:1,after:20}));
+    out.push(W.p(periodText("for"),{sz:18,align:"center",color:"3D4741",after:160}));
+    const trs=[W.row([W.cell("Particulars",grid[0],{b:1,sz:15,bottom:"single",fill:"EDF1EE"})]
+      .concat(s_.cols.map((c,i)=>W.cell(c.label,grid[i+1],{b:1,sz:15,align:"right",bottom:"single",fill:"EDF1EE"})))
+      .concat([W.cell("Total",grid[grid.length-1],{b:1,sz:15,align:"right",bottom:"single",fill:"EDF1EE"})]))];
+    for(const r of s_.rows){
+      const bal=r.kind.startsWith("close")||r.kind.startsWith("open");
+      const o={b:bal, top:bal, bottom:r.kind==="close2"?"double":null, sz:16};
+      const tot=s_.cols.reduce((x,c)=>x+(r.v[c.id]||0),0);
+      trs.push(W.row([W.cell(r.label,grid[0],o)]
+        .concat(s_.cols.map((c,i)=>W.cell(disp(r.v[c.id]||0),grid[i+1],{...o,align:"right"})))
+        .concat([W.cell(disp(tot),grid[grid.length-1],{...o,align:"right"})])));
+    }
+    out.push(W.table(trs,grid));
+    parts.push(out.join(""));
+  }
+  if(f.stmts.includes("CF")) parts.push(docStmt(f.cfTitle, periodText("for"), m.cfRows, showPY));
+  parts.push(docNotes(m));
+
+  const body = parts.join(W.br());
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>
+<w:pgMar w:top="1134" w:right="1021" w:bottom="1134" w:left="1021" w:header="567" w:footer="567" w:gutter="0"/>
+</w:sectPr></w:body></w:document>`;
+  return zipFiles([
+    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`],
+    ["word/document.xml", doc]
+  ], "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+}
+async function exportDocx(){
+  if(!S.tb.length){ toast("Import a trial balance first.", true); return; }
+  const b=$("btnDocx"), old=b.textContent; b.disabled=true; b.textContent="Building document…";
+  try{
+    const blob=await buildDocx();
+    const nm=(S.meta.entity||"Financial statements").replace(/[^A-Za-z0-9 \-_&\.]/g,"").trim().slice(0,60);
+    await deliver(nm+" — "+(S.meta.cyLabel||"FS")+".docx", blob);
+  }catch(e){ toast("Word export failed: "+e.message, true); console.error(e); }
+  finally{ b.disabled=false; b.textContent=old; }
+}
+</script>
+
+<script>
+/* ---------- 29. PRINT THE WHOLE PACK ---------- */
+function printAll(){
+  if(!S.tb.length){ toast("Import a trial balance first.", true); return; }
+  const m=M(), f=m.f, showPY=S.meta.first!=="yes";
+  const box=document.createElement("div"); box.id="printPack";
+  const sheet=(title,sub,rows)=>`<div class="sheet">${sheetHead(title,sub)}
+    <div class="sheet-units">${esc(unitNote())}</div>${rowsHTML(rows,showPY)}${sigBlock()}</div>`;
+  let h = sheet(f.sofpTitle, periodText("at"), m.sofpRows)
+        + sheet(f.plTitle, periodText("for"), m.plRows);
+  if(f.stmts.includes("SOCE"))
+    h += `<div class="sheet">${sheetHead(f.equityStmt,periodText("for"))}
+      <div class="sheet-units">${esc(unitNote())}</div>${soceFsHTML(m)}${sigBlock()}</div>`;
+  if(f.stmts.includes("CF")) h += sheet(f.cfTitle, periodText("for"), m.cfRows);
+  h += notesHTML(m);
+  box.innerHTML = h;
+  document.body.appendChild(box);
+  document.body.classList.add("printing");
+  let cleaned=false;
+  const done=()=>{ if(cleaned) return; cleaned=true;
+    document.body.classList.remove("printing"); box.remove();
+    window.removeEventListener("afterprint",done); };
+  window.addEventListener("afterprint",done);
+  setTimeout(()=>{ try{ window.print(); }catch(e){} setTimeout(done, 1500); }, 150);
+}
+</script>
+
+<script>
 /* ---------- 21. WORKED EXAMPLE ---------- */
 const DEMO_TB = [
 ["1010","Land",3000000,0,3000000,0],
@@ -3855,6 +4125,8 @@ function init(){
   $("tbGrid").addEventListener("input", tbGridEvent);
   $("tbGrid").addEventListener("click", tbGridEvent);
   $("btnXlsx").onclick = exportXlsx;
+  $("btnDocx").onclick = exportDocx;
+  $("btnPdf").onclick = printAll;
   $("btnJson").onclick = saveEngagement;
   $("btnSave").onclick = saveEngagement;
   $("btnLoad").onclick = ()=> $("fileLoad").click();
