@@ -1179,6 +1179,24 @@ function groupFallback(grp, fw){
   if(!id) return "";
   return catFor(fw).some(c=>c.id===id) ? id : "";
 }
+/* A company reporting under the not-for-profit standard, or an NGO reporting under
+   a company framework, is nearly always the wrong framework left selected rather
+   than a deliberate choice. Say so instead of quietly mapping into the wrong
+   captions - it is why trade receivables would come out as "other receivables". */
+function frameworkMismatch(){
+  const form=(S.meta.form||"").toLowerCase();
+  const isNfp=/non-governmental|ngo|social welfare|trust|association|society|co-operative/.test(form);
+  const isBiz=/company|limited|partnership|proprietorship|branch/.test(form);
+  if(S.fw==="NPO" && isBiz && !isNfp)
+    return "This engagement is set to "+FRAMEWORKS.NPO.abbr+" but the entity is a "+S.meta.form+
+      ". Company captions such as trade receivables and revenue do not exist under the "+
+      "not-for-profit standard, so balances are being mapped to the nearest fund caption. "+
+      "Change the framework on the setup step if that is not intended.";
+  if(S.fw!=="NPO" && isNfp)
+    return "This engagement is set to "+fwDef().abbr+" but the entity is a "+S.meta.form+
+      ". NAS for NPOs would present funds and an income and expenditure account instead.";
+  return "";
+}
 function refreshChrome(){
   const f = FRAMEWORKS[S.fw];
   $("tbEnt").textContent = S.meta.entity || "Untitled Entity";
@@ -3383,6 +3401,7 @@ function runImport(){
       name, dr, cr, pdr, pcr, map:autoMapOne(name,S.fw)});
   }
   if(drift) setTimeout(()=>toast(drift+" ledgers where opening plus transactions does not equal the closing balance — the closing figure has been used.", true), 2600);
+  const mism=frameworkMismatch(); if(mism) setTimeout(()=>toast(mism, true), drift?5200:2600);
   if(!out.length){ toast("No ledger rows were found — check the first data row.", true); return; }
   S.tb = $("impMode").value==="append" ? S.tb.concat(out) : out;
   $("impModal").hidden=true;
@@ -3595,6 +3614,10 @@ function complianceChecks(){
     "Comparative figures presented and balanced",
     S.meta.first==="yes"?"First reporting period — no comparatives required":
       "Prior year position differs by "+dispRaw(m.tot.sofpDiffP),"NAS 1");
+  /* the framework actually suits the entity */
+  const mism=frameworkMismatch();
+  add(!mism, "Reporting framework suits the legal form of the entity",
+    mism || (S.meta.form+" reporting under "+fwDef().abbr), "NAS 1");
   /* policies + notes */
   add(!!(S.policies||"").trim(),"Significant accounting policies documented",
     (S.policies||"").trim()?"Policy note prepared":"No accounting policy note has been written","NAS 1");
