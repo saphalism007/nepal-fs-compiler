@@ -55,7 +55,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 :root[data-theme="dark"] .rail,:root:not([data-theme="light"]) .rail{background:#101613}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .rail{background:var(--green)}}
 .brand{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
-.brand-mark{font-family:var(--serif);font-size:19px;font-weight:700;color:#fff;letter-spacing:-.01em;line-height:1.15}
+.brand-mark{font-family:var(--serif);font-size:20px;font-weight:700;color:#fff;letter-spacing:-.015em;line-height:1.15;white-space:nowrap}
 .brand-sub{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-top:6px;font-weight:500}
 .steps{padding:10px 8px;display:flex;flex-direction:column;gap:1px;flex:1}
 .step{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:5px;background:none;border:0;text-align:left;cursor:pointer;color:rgba(255,255,255,.72);font-size:13.5px;font-weight:500;width:100%;transition:background .12s,color .12s}
@@ -220,6 +220,37 @@ textarea.paste{width:100%;min-height:170px;font-family:var(--mono);font-size:12.
   .sheet{padding:26px 20px 34px}
   .pane{padding:16px 12px 60px}
 }
+
+.step-sep{height:1px;background:rgba(255,255,255,.12);margin:10px 10px 8px}
+.step-n.util{border-style:dashed;font-size:12px}
+.step.util{color:rgba(255,255,255,.6)}
+.calcwrap{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.calcwrap{grid-template-columns:1fr}}
+.calcdisp{background:var(--surface-3);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;text-align:right;margin-bottom:12px}
+.calcdisp .sub{font-size:12px;color:var(--muted);min-height:16px;font-family:var(--mono)}
+.calcdisp .main{font-size:30px;font-weight:600;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;overflow-x:auto;white-space:nowrap}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.key{padding:14px 0;border-radius:7px;border:1px solid var(--rule-strong);background:var(--surface);font-size:16px;font-weight:500;cursor:pointer;font-variant-numeric:tabular-nums;transition:background .1s,transform .05s;color:var(--ink)}
+.key:hover{background:var(--surface-3)}
+.key:active{transform:translateY(1px)}
+.key.op{background:var(--surface-3);color:var(--green-2);font-weight:600}
+.key.eq{background:var(--green);color:#fff;border-color:var(--green);grid-row:span 2}
+.key.fn{font-size:13px;color:var(--crimson)}
+.key.wide{grid-column:span 2}
+.calhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.calgrid .dow{text-align:center;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 0}
+.cell{aspect-ratio:1;border:1px solid var(--rule-2);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:var(--surface);transition:background .1s}
+.cell:hover{background:var(--green-wash);border-color:var(--green-3)}
+.cell.empty{border:0;background:none;cursor:default}
+.cell .bs{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.cell .ad{font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.cell.today{background:var(--green);border-color:var(--green)}
+.cell.today .bs,.cell.today .ad{color:#fff}
+.cell.sat{background:var(--crimson-wash)}
+.cell.sat .bs{color:var(--crimson)}
+.cell.sel{box-shadow:inset 0 0 0 2px var(--green-2)}
+
 /* installed-app window: keep the rail clear of a notch or home indicator */
 @supports (padding: env(safe-area-inset-top)){
   @media (display-mode: standalone),(display-mode: fullscreen),(display-mode: minimal-ui){
@@ -247,7 +278,7 @@ body.printing #printPack{display:block}
 <div class="app">
   <aside class="rail">
     <div class="brand">
-      <div class="brand-mark">Saphal<br>Financials</div>
+      <div class="brand-mark">Saphal Financials</div>
       <div class="brand-sub">Trial balance → Financials</div>
     </div>
     <nav class="steps" id="steps"></nav>
@@ -445,6 +476,16 @@ body.printing #printPack{display:block}
         <button class="btn" onclick="window.print()">Print / PDF</button>
       </div>
       <div id="fsBody"></div>
+    </section>
+
+    <!-- ============ ADJUST AND FINALISE ============ -->
+    <section class="pane" id="pane-fin">
+      <div class="pane-head">
+        <h2>Adjust and finalise</h2>
+        <p>The prepared statements are never altered. Anything you change here sits on top of them as your adjustment, and the finalised version is what gets exported. Every line shows what was prepared beside what you made it, and any line reverts on its own.</p>
+      </div>
+      <div class="subtabs" id="finTabs"></div>
+      <div id="finBody"></div>
     </section>
 
     <!-- ============ AUDIT CHECKS ============ -->
@@ -1042,7 +1083,7 @@ const DEF = () => ({
   tb:[], ppe:[], intan:[], dt:[], pools:[], fi:{cat:[],hier:[],aging:[],mat:[]},
   taxAdd:[], taxLess:[], taxOther:{rebate:0,fees:0,tds:0,advance:0,exempt:0},
   cf:{}, soce:{openPY:{}, movPY:[], movCY:[]}, policies:"", extra:{},
-  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[], noteText:{}
+  coa:{rules:[], captions:{}}, learned:{}, queries:{answered:{}, dismissed:[], notes:""}, je:[], noteText:{}, fin:{on:false, lines:{}, labels:{}}
 });
 let S = DEF();
 let onlyUnmapped = false;
@@ -1055,7 +1096,7 @@ function restore(){ try{ const raw=localStorage.getItem(LSKEY); if(!raw) return 
   S.fi=Object.assign({cat:[],hier:[],aging:[],mat:[]},o.fi||{}); S.soce=Object.assign({openPY:{},movPY:[],movCY:[]},o.soce||{});
   S.taxOther=Object.assign({rebate:0,fees:0,tds:0,advance:0,exempt:0},o.taxOther||{});
   S.coa=Object.assign({rules:[],captions:{}},o.coa||{}); S.learned=o.learned||{};
-  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; return true; }catch(e){ return false; } }
+  S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; S.fin=Object.assign({on:false,lines:{},labels:{}},o.fin||{}); return true; }catch(e){ return false; } }
 
 let toastT;
 function toast(msg, err){ const t=$("toast"); t.textContent=msg; t.className="toast"+(err?" err":""); t.hidden=false;
@@ -1114,14 +1155,24 @@ const STEPS = [
   {id:"sch",   label:"Schedules"},
   {id:"tax",   label:"Income tax"},
   {id:"fs",    label:"Financial statements"},
+  {id:"fin",   label:"Adjust & finalise"},
   {id:"audit", label:"Audit checks"},
   {id:"tools", label:"Tools"},
   {id:"exp",   label:"Export"}
 ];
 let curStep = "setup";
+const UTIL_STEPS = new Set(["tools"]);
 function buildSteps(){
-  $("steps").innerHTML = STEPS.map((s,i)=>
-    `<button class="step" data-step="${s.id}"><span class="step-n">${i+1}</span><span>${esc(s.label)}</span></button>`).join("");
+  /* The workflow is numbered. Tools is not a stage of the job, so it sits below a
+     divider without a number rather than being a step that never completes. */
+  let n=0;
+  $("steps").innerHTML = STEPS.map(s=>{
+    if(UTIL_STEPS.has(s.id))
+      return `<div class="step-sep"></div><button class="step util" data-step="${s.id}">
+        <span class="step-n util">&#9678;</span><span>${esc(s.label)}</span></button>`;
+    n++;
+    return `<button class="step" data-step="${s.id}"><span class="step-n">${n}</span><span>${esc(s.label)}</span></button>`;
+  }).join("");
   $("steps").querySelectorAll(".step").forEach(b=>b.onclick=()=>nav(b.dataset.step));
 }
 function nav(id){
@@ -1134,6 +1185,7 @@ function nav(id){
   if(id==="sch") renderSch();
   if(id==="tax") renderTax();
   if(id==="fs") renderFs();
+  if(id==="fin") renderFin();
   if(id==="audit") renderAud();
   if(id==="exp") renderExp();
   if(id==="tools") renderTools();
@@ -1141,14 +1193,25 @@ function nav(id){
   window.scrollTo(0,0);
 }
 function markSteps(){
-  const done = {
+  const has=S.tb.length>0 && !!S.fw, t=has?tbTotals():null, tol=num(S.meta.tol);
+  const mm=(has&&t&&Math.abs(t.diff)<=tol)?M():null;
+  const done={
     setup: !!(S.fw && S.meta.entity),
-    tb: S.tb.length>0 && Math.abs(tbTotals().diff)<=num(S.meta.tol),
-    sch: S.ppe.length>0 || S.intan.length>0,
-    tax: S.pools.some(p=>num(p.opWdv)||num(p.a1)||num(p.a2)||num(p.a3)),
-    fs: false, exp:false
+    tb:    !!(t && Math.abs(t.diff)<=tol && t.unmapped===0),
+    qry:   !!(has && typeof buildQueries==="function" &&
+              buildQueries().filter(q=>!q.info && !qAnswered(q.id)).length===0),
+    je:    !!(has && (typeof jeTotals!=="function" || jeTotals().unbalanced===0)),
+    sch:   S.ppe.some(r=>num(r.opCost)||num(r.add)) || S.intan.some(r=>num(r.opCost)||num(r.add)),
+    tax:   S.fw==="NPO" || S.pools.some(p=>num(p.opWdv)||num(p.a1)||num(p.a2)||num(p.a3)),
+    fs:    !!(mm && Math.abs(mm.tot.sofpDiff)<=tol),
+    fin:   !!(mm && Math.abs(mm.tot.sofpDiff)<=tol),
+    audit: !!(mm && mm.checks.every(c=>c.ok)),
+    exp:   !!(mm && Math.abs(mm.tot.sofpDiff)<=tol && t.unmapped===0)
   };
-  $("steps").querySelectorAll(".step").forEach(b=>b.classList.toggle("done", !!done[b.dataset.step]));
+  $("steps").querySelectorAll(".step").forEach(b=>{
+    if(UTIL_STEPS.has(b.dataset.step)) return;
+    b.classList.toggle("done", !!done[b.dataset.step]);
+  });
 }
 
 /* ---------- 7. FRAMEWORK PICKER ---------- */
@@ -2329,7 +2392,7 @@ function compHTML(rows){
 
 <script>
 /* ---------- 17. MODEL WRAPPER + NOTE PACK ---------- */
-function M(){ const m = compute();
+function M(prepared){ const m = compute();
   const pyMap = (S.cf&&S.cf.pyMap)||{};
   m.cfRows.forEach(r=>{ if(!r.label) return;
     if(pyMap[r.label]!==undefined && pyMap[r.label]!=="") r.py = r2(num(pyMap[r.label])); });
@@ -2344,6 +2407,7 @@ function M(){ const m = compute();
       const v=m.cfRows[k]; if(!v||v.type!=="item") continue; take(v,1); }
     if(seen && !miss) r.py=r2(sum);
   });
+  if(!prepared) applyFinal(m);
   return m; }
 
 function matrixOf(spec, rows){
@@ -4731,100 +4795,386 @@ function calSelfTest(){
 
 /* ---------- 34. TOOLS ---------- */
 let TAPE=[];
+let CALC={cur:"0", prev:null, op:null, fresh:true};
+let CALV={y:null, m:null, sel:null};
 function tapeTotal(){ return r2(TAPE.reduce((s,e)=>s+e.v,0)); }
+function calcNum(){ return parseFloat(CALC.cur)||0; }
+function calcApply(){
+  if(CALC.op===null || CALC.prev===null) return calcNum();
+  const a=CALC.prev, b=calcNum();
+  const r = CALC.op==="+"?a+b : CALC.op==="-"?a-b : CALC.op==="*"?a*b : CALC.op==="/"?(b?a/b:NaN) : b;
+  return isFinite(r)?r2(r):NaN;
+}
+function calcKey(k){
+  if(/^[0-9]$/.test(k)){ CALC.cur = (CALC.fresh||CALC.cur==="0") ? k : CALC.cur+k; CALC.fresh=false; return; }
+  if(k==="."){ if(CALC.fresh){ CALC.cur="0."; CALC.fresh=false; } else if(!CALC.cur.includes(".")) CALC.cur+="."; return; }
+  if(k==="C"){ CALC={cur:"0",prev:null,op:null,fresh:true}; return; }
+  if(k==="back"){ CALC.cur = CALC.cur.length>1 ? CALC.cur.slice(0,-1) : "0"; if(CALC.cur==="-") CALC.cur="0"; return; }
+  if(k==="neg"){ CALC.cur = CALC.cur.startsWith("-") ? CALC.cur.slice(1) : ("-"+CALC.cur); return; }
+  if(k==="pct"){ CALC.cur = String(r2(calcNum()/100)); CALC.fresh=true; return; }
+  if(k==="="){ const r=calcApply(); CALC={cur:isFinite(r)?String(r):"0", prev:null, op:null, fresh:true}; return; }
+  if("+-*/".includes(k)){
+    if(CALC.op!==null && !CALC.fresh){ const r=calcApply(); CALC.prev=isFinite(r)?r:0; CALC.cur=String(CALC.prev); }
+    else CALC.prev=calcNum();
+    CALC.op=k; CALC.fresh=true; return;
+  }
+}
 function renderTools(){
   const bad=calSelfTest();
   const today=new Date(), tb=ad2bs(today);
-  const h=`
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;align-items:start">
+  if(CALV.y===null && tb){ CALV.y=tb.y; CALV.m=tb.m; }
+  if(CALV.y===null){ CALV.y=CAL_FROM; CALV.m=1; }
+  const OPN={"+":"plus","-":"minus","*":"times","/":"divided by"};
+  const h=`<div class="calcwrap">
     <div class="card">
-      <h3>Tape calculator<span class="rt"><button class="btn sm" id="tapeClear">Clear</button></span></h3>
-      <div class="btnrow" style="margin-bottom:10px">
-        <input id="tapeIn" placeholder="Type a number and press Enter" style="flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink);font-family:var(--mono);text-align:right">
-        <button class="btn sm" data-op="+">Add</button>
-        <button class="btn sm" data-op="-">Subtract</button>
+      <h3>Calculator<span class="rt">Type on your keyboard as well</span></h3>
+      <div class="calcdisp">
+        <div class="sub" id="calcSub">${CALC.op?esc(fmtNum(CALC.prev||0,2,GM())+" "+OPN[CALC.op]):"&nbsp;"}</div>
+        <div class="main" id="calcMain">${esc(fmtNum(calcNum(),Math.min(6,(CALC.cur.split(".")[1]||"").length),GM()))}</div>
       </div>
-      <div class="btnrow" style="margin-bottom:12px">
-        <button class="btn sm" data-op="*">x</button><button class="btn sm" data-op="/">divide</button>
-        <button class="btn sm" data-op="vatadd">add VAT 13%</button>
-        <button class="btn sm" data-op="vatex">extract VAT</button>
-        <button class="btn sm" data-op="pct">% of total</button>
+      <div class="keys">
+        <button class="key fn" data-k="C">C</button>
+        <button class="key fn" data-k="back">&#9003;</button>
+        <button class="key fn" data-k="neg">+/-</button>
+        <button class="key op" data-k="/">&divide;</button>
+        <button class="key" data-k="7">7</button><button class="key" data-k="8">8</button>
+        <button class="key" data-k="9">9</button><button class="key op" data-k="*">&times;</button>
+        <button class="key" data-k="4">4</button><button class="key" data-k="5">5</button>
+        <button class="key" data-k="6">6</button><button class="key op" data-k="-">&minus;</button>
+        <button class="key" data-k="1">1</button><button class="key" data-k="2">2</button>
+        <button class="key" data-k="3">3</button><button class="key op" data-k="+">+</button>
+        <button class="key wide" data-k="0">0</button><button class="key" data-k=".">.</button>
+        <button class="key eq" data-k="=">=</button>
       </div>
-      <div class="gwrap" style="max-height:300px">
-        <table class="g"><tbody id="tapeBody"></tbody></table>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn sm" data-t="add">Add to tape</button>
+        <button class="btn sm" data-t="sub">Subtract on tape</button>
+        <button class="btn sm" data-t="vatadd">+ VAT 13%</button>
+        <button class="btn sm" data-t="vatex">Extract VAT</button>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-2)">
-        <span style="font-weight:600">Total</span>
-        <span id="tapeTot" style="font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums"></span>
-      </div>
-      <p class="hint" style="margin-top:8px">Every entry stays on the tape. Click any line to remove it and the total corrects itself.</p>
     </div>
 
     <div class="card">
-      <h3>Bikram Sambat and Gregorian<span class="rt">${CAL_FROM} to ${CAL_TO} BS</span></h3>
-      ${bad.length?`<p class="hint" style="color:var(--crimson)">The calendar table failed its own check and should not be relied on: ${esc(bad.join("; "))}</p>`:""}
-      <p class="hint" style="margin-bottom:12px">Today is <strong>${esc(bsText(tb))}</strong> BS, ${esc(fmtAd(today.toISOString().slice(0,10)))}.</p>
-      <div class="grid-f" style="margin-bottom:8px">
-        <label class="f">Bikram Sambat (YYYY.MM.DD)<input id="cvBs" placeholder="2083.03.32"></label>
-        <label class="f">Gregorian<input id="cvAd" type="date"></label>
+      <h3>Tape<span class="rt"><button class="btn sm" id="tapeClear">Clear tape</button></span></h3>
+      <div class="gwrap" style="max-height:330px"><table class="g"><tbody id="tapeBody"></tbody></table></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-2)">
+        <span style="font-weight:600">Total</span>
+        <span id="tapeTot" style="font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums"></span>
       </div>
-      <div id="cvOut" class="hint" style="min-height:44px;padding:10px;background:var(--surface-3);border-radius:5px"></div>
-      <p class="hint" style="margin-top:12px"><strong>Fiscal year ends.</strong> Ashad has 31 or 32 days depending on the year, so the year end moves:</p>
-      <div class="gwrap" style="max-height:200px;margin-top:6px"><table class="g"><tbody>${
-        [2080,2081,2082,2083,2084,2085].map(y=>{const d=lastAshad(y), ad=bs2ad(y,3,d);
-          return `<tr><td style="padding:5px 9px">FY ${y-1}/${String(y).slice(2)}</td>
-            <td style="padding:5px 9px;font-family:var(--mono);font-size:12px">${y}.03.${d}</td>
-            <td style="padding:5px 9px;color:var(--muted)">${ad?fmtAd(ad.toISOString().slice(0,10)):""}</td></tr>`;}).join("")
-      }</tbody></table></div>
+      <p class="hint" style="margin-top:8px">Click any line to remove it. The total corrects itself, so a wrong entry does not mean retyping the run.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Nepali calendar<span class="rt">${CAL_FROM} to ${CAL_TO} BS</span></h3>
+    ${bad.length?`<p class="hint" style="color:var(--crimson)">The calendar table failed its own check and should not be relied on: ${esc(bad.join("; "))}</p>`:""}
+    <div class="calcwrap" style="grid-template-columns:1.35fr 1fr">
+      <div>
+        <div class="calhead">
+          <button class="btn sm" id="calPrev">&#8592;</button>
+          <div style="display:flex;gap:8px;flex:1">
+            <select id="calM" style="flex:1;padding:6px 8px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
+              ${NEP_MONTHS.map((n,i)=>`<option value="${i+1}"${CALV.m===i+1?" selected":""}>${esc(n)}</option>`).join("")}
+            </select>
+            <select id="calY" style="width:110px;padding:6px 8px;border:1px solid var(--rule-strong);border-radius:5px;background:var(--surface);color:var(--ink)">
+              ${Array.from({length:CAL_TO-CAL_FROM+1},(_,i)=>CAL_FROM+i).map(y=>`<option value="${y}"${CALV.y===y?" selected":""}>${y}</option>`).join("")}
+            </select>
+          </div>
+          <button class="btn sm" id="calNext">&#8594;</button>
+          <button class="btn sm" id="calToday">Today</button>
+        </div>
+        <div class="calgrid">
+          ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>`<div class="dow">${d}</div>`).join("")}
+          ${calCells(today)}
+        </div>
+      </div>
+      <div>
+        <div id="calOut" class="hint" style="padding:12px;background:var(--surface-3);border-radius:6px;min-height:96px"></div>
+        <div class="grid-f" style="margin-top:12px">
+          <label class="f">Bikram Sambat<input id="cvBs" placeholder="2083.03.32"></label>
+          <label class="f">Gregorian<input id="cvAd" type="date"></label>
+        </div>
+        <p class="hint" style="margin-top:10px"><strong>Fiscal year ends.</strong> Ashad runs to 31 or 32 days, so the year end moves.</p>
+        <div class="gwrap" style="max-height:180px;margin-top:6px"><table class="g"><tbody>${
+          [2080,2081,2082,2083,2084,2085].map(y=>{const d=lastAshad(y), ad=bs2ad(y,3,d);
+            return `<tr><td style="padding:5px 9px">FY ${y-1}/${String(y).slice(2)}</td>
+              <td style="padding:5px 9px;font-family:var(--mono);font-size:12px">${y}.03.${d}</td>
+              <td style="padding:5px 9px;color:var(--muted)">${ad?fmtAd(ad.toISOString().slice(0,10)):""}</td></tr>`;}).join("")
+        }</tbody></table></div>
+      </div>
     </div>
   </div>`;
   $("toolsBody").innerHTML=h;
+  wireTools(today);
+}
+function calCells(today){
+  const y=CALV.y, mo=CALV.m;
+  if(!NEP_CAL[y]) return "";
+  const first=bs2ad(y,mo,1); if(!first) return "";
+  const lead=first.getUTCDay(), len=NEP_CAL[y][mo-1];
+  const tIso=today.toISOString().slice(0,10);
+  let out="";
+  for(let i=0;i<lead;i++) out+='<div class="cell empty"></div>';
+  for(let d=1;d<=len;d++){
+    const ad=bs2ad(y,mo,d), iso=ad.toISOString().slice(0,10);
+    const isSat=ad.getUTCDay()===6, isToday=iso===tIso;
+    const sel=CALV.sel===iso;
+    out+=`<div class="cell${isToday?" today":""}${isSat&&!isToday?" sat":""}${sel?" sel":""}" data-day="${d}" data-iso="${iso}">
+      <span class="bs">${d}</span>
+      <span class="ad">${ad.getUTCDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][ad.getUTCMonth()]}</span></div>`;
+  }
+  return out;
+}
+function wireTools(today){
   const drawTape=()=>{
     $("tapeBody").innerHTML = TAPE.length ? TAPE.map((e,i)=>
-      `<tr data-tape="${i}" style="cursor:pointer"><td style="padding:5px 9px;color:var(--muted);width:34px">${i+1}</td>
-       <td style="padding:5px 9px;font-size:12px;color:var(--muted)">${esc(e.note||"")}</td>
-       <td class="num" style="padding:5px 9px;font-family:var(--mono);font-variant-numeric:tabular-nums">${e.v<0?"("+fmtNum(-e.v,2,GM())+")":fmtNum(e.v,2,GM())}</td></tr>`).join("")
-      : '<tr><td style="padding:10px 9px;color:var(--faint)">Nothing on the tape yet.</td></tr>';
+      `<tr data-tape="${i}" style="cursor:pointer"><td style="padding:6px 9px;color:var(--faint);width:30px">${i+1}</td>
+       <td style="padding:6px 9px;font-size:12px;color:var(--muted)">${esc(e.note||"")}</td>
+       <td class="num" style="padding:6px 9px;font-family:var(--mono);font-variant-numeric:tabular-nums">${e.v<0?"("+fmtNum(-e.v,2,GM())+")":fmtNum(e.v,2,GM())}</td></tr>`).join("")
+      : '<tr><td style="padding:12px 9px;color:var(--faint)">Nothing on the tape yet. Work out a figure on the left, then add it here.</td></tr>';
     $("tapeTot").textContent = fmtNum(tapeTotal(),2,GM());
-    $("tapeBody").querySelectorAll("[data-tape]").forEach(tr=>tr.onclick=()=>{
-      TAPE.splice(+tr.dataset.tape,1); drawTape(); });
+    $("tapeBody").querySelectorAll("[data-tape]").forEach(tr=>tr.onclick=()=>{ TAPE.splice(+tr.dataset.tape,1); drawTape(); });
   };
   drawTape();
-  const take=()=>{ const v=num($("tapeIn").value); $("tapeIn").value=""; $("tapeIn").focus(); return v; };
-  const op=(o)=>{
-    const v=take();
-    if(o==="+") TAPE.push({v, note:"add"});
-    else if(o==="-") TAPE.push({v:-v, note:"subtract"});
-    else if(o==="*"){ const t=tapeTotal(); TAPE=[{v:r2(t*v), note:"total x "+v}]; }
-    else if(o==="/"){ if(!v){ toast("Cannot divide by zero.", true); return; }
-      const t=tapeTotal(); TAPE=[{v:r2(t/v), note:"total divided by "+v}]; }
-    else if(o==="vatadd") TAPE.push({v:r2(v*1.13), note:fmtNum(v,2,GM())+" plus VAT 13%"});
-    else if(o==="vatex"){ const base=r2(v/1.13);
+  const redrawCalc=()=>{
+    const OPN={"+":"plus","-":"minus","*":"times","/":"divided by"};
+    $("calcSub").innerHTML = CALC.op?esc(fmtNum(CALC.prev||0,2,GM())+" "+OPN[CALC.op]):"&nbsp;";
+    $("calcMain").textContent = fmtNum(calcNum(), Math.min(6,(CALC.cur.split(".")[1]||"").length), GM());
+  };
+  document.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{ calcKey(b.dataset.k); redrawCalc(); });
+  document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{
+    const v=calcNum(), t=b.dataset.t;
+    if(t==="add") TAPE.push({v:r2(v), note:"add"});
+    else if(t==="sub") TAPE.push({v:r2(-v), note:"subtract"});
+    else if(t==="vatadd") TAPE.push({v:r2(v*1.13), note:fmtNum(v,2,GM())+" plus VAT 13%"});
+    else if(t==="vatex"){ const base=r2(v/1.13);
       TAPE.push({v:base, note:"taxable value"}); TAPE.push({v:r2(v-base), note:"VAT 13%"}); }
-    else if(o==="pct"){ const t=tapeTotal(); TAPE=[{v:r2(t*v/100), note:v+"% of "+fmtNum(t,2,GM())}]; }
-    drawTape();
-  };
-  document.querySelectorAll("[data-op]").forEach(b=>b.onclick=()=>op(b.dataset.op));
+    CALC={cur:"0",prev:null,op:null,fresh:true}; redrawCalc(); drawTape();
+  });
   $("tapeClear").onclick=()=>{ TAPE=[]; drawTape(); };
-  $("tapeIn").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); op(e.shiftKey?"-":"+"); } };
-  const show=(t)=>$("cvOut").innerHTML=t;
-  $("cvBs").oninput=()=>{
-    const m=String($("cvBs").value).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
-    if(!m) return show('<span style="color:var(--muted)">Enter a date as 2083.03.32</span>');
-    const y=+m[1],mo=+m[2],d=+m[3], ad=bs2ad(y,mo,d);
-    if(!ad) return show('<span style="color:var(--crimson)">'+(NEP_CAL[y]?("There is no "+NEP_MONTHS[mo-1]+" "+d+" in "+y+". That month has "+(NEP_CAL[y][mo-1]||"?")+" days."):("The table covers "+CAL_FROM+" to "+CAL_TO+" BS only."))+'</span>');
+  if(!window._calcKeys){ window._calcKeys=true;
+    document.addEventListener("keydown",e=>{
+      if(curStep!=="tools") return;
+      const tag=(e.target.tagName||"").toLowerCase();
+      if(tag==="input"||tag==="textarea"||tag==="select") return;
+      let k=null;
+      if(/^[0-9.]$/.test(e.key)) k=e.key;
+      else if("+-*/".includes(e.key)) k=e.key;
+      else if(e.key==="Enter"||e.key==="=") k="=";
+      else if(e.key==="Backspace") k="back";
+      else if(e.key==="Escape") k="C";
+      else if(e.key==="%") k="pct";
+      if(k){ e.preventDefault(); calcKey(k); if($("calcMain")) redrawCalc(); }
+    });
+  }
+  const step=(d)=>{ let y=CALV.y, m=CALV.m+d;
+    if(m<1){ m=12; y--; } if(m>12){ m=1; y++; }
+    if(y<CAL_FROM||y>CAL_TO) return; CALV.y=y; CALV.m=m; renderTools(); };
+  $("calPrev").onclick=()=>step(-1);
+  $("calNext").onclick=()=>step(1);
+  $("calToday").onclick=()=>{ const b=ad2bs(new Date()); if(b){ CALV.y=b.y; CALV.m=b.m;
+    CALV.sel=new Date().toISOString().slice(0,10); renderTools(); } };
+  $("calM").onchange=()=>{ CALV.m=+$("calM").value; renderTools(); };
+  $("calY").onchange=()=>{ CALV.y=+$("calY").value; renderTools(); };
+  const show=(html)=>{ if($("calOut")) $("calOut").innerHTML=html; };
+  const pick=(y,mo,d)=>{
+    const ad=bs2ad(y,mo,d); if(!ad) return;
     const iso=ad.toISOString().slice(0,10);
-    show("<strong>"+esc(fmtAd(iso))+"</strong><br>"+esc(NEP_MONTHS[mo-1])+" "+d+", "+y+" BS"+
-      "<br><span style='color:var(--muted)'>"+["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][ad.getUTCDay()]+"</span>");
-    $("cvAd").value=iso;
+    CALV.sel=iso;
+    show(`<div style="font-family:var(--serif);font-size:17px;font-weight:600;color:var(--ink)">${esc(NEP_MONTHS[mo-1])} ${d}, ${y}</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px">${y}.${String(mo).padStart(2,"0")}.${String(d).padStart(2,"0")} BS</div>
+      <div style="margin-top:8px;font-size:14px">${esc(fmtAd(iso))}</div>
+      <div style="color:var(--muted);font-size:12px">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][ad.getUTCDay()]}</div>`);
+    if($("cvBs")) $("cvBs").value=y+"."+String(mo).padStart(2,"0")+"."+String(d).padStart(2,"0");
+    if($("cvAd")) $("cvAd").value=iso;
+    document.querySelectorAll(".cell[data-iso]").forEach(c=>c.classList.toggle("sel", c.dataset.iso===iso));
   };
-  $("cvAd").oninput=()=>{
+  document.querySelectorAll(".cell[data-day]").forEach(c=>c.onclick=()=>pick(CALV.y,CALV.m,+c.dataset.day));
+  const tb0=ad2bs(today);
+  if(CALV.sel){ const b=ad2bs(new Date(CALV.sel+"T00:00:00Z")); if(b) pick(b.y,b.m,b.d); }
+  else if(tb0) pick(tb0.y,tb0.m,tb0.d);
+  if($("cvBs")) $("cvBs").oninput=()=>{
+    const mm=String($("cvBs").value).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if(!mm) return;
+    const y=+mm[1],mo=+mm[2],d=+mm[3];
+    if(!bs2ad(y,mo,d)) return show(`<span style="color:var(--crimson)">${NEP_CAL[y]?("There is no "+NEP_MONTHS[mo-1]+" "+d+" in "+y+"; that month has "+NEP_CAL[y][mo-1]+" days."):("The table covers "+CAL_FROM+" to "+CAL_TO+" BS.")}</span>`);
+    CALV.y=y; CALV.m=mo; renderTools(); setTimeout(()=>pick(y,mo,d),0);
+  };
+  if($("cvAd")) $("cvAd").oninput=()=>{
     const v=$("cvAd").value; if(!v) return;
     const b=ad2bs(new Date(v+"T00:00:00Z"));
-    if(!b) return show('<span style="color:var(--crimson)">Outside '+CAL_FROM+" to "+CAL_TO+' BS.</span>');
-    show("<strong>"+esc(bsText(b))+"</strong> BS<br>"+esc(fmtAd(v)));
-    $("cvBs").value=b.y+"."+String(b.m).padStart(2,"0")+"."+String(b.d).padStart(2,"0");
+    if(!b) return show(`<span style="color:var(--crimson)">Outside ${CAL_FROM} to ${CAL_TO} BS.</span>`);
+    CALV.y=b.y; CALV.m=b.m; renderTools(); setTimeout(()=>pick(b.y,b.m,b.d),0);
   };
+}
+</script>
+
+<script>
+/* ---------- 35. ADJUST AND FINALISE ----------
+   The prepared figures stay as computed. Your changes are held separately and
+   laid over them, subtotals are then recomputed from the adjusted lines so the
+   statement still adds up, and the finalised version is what leaves the app. */
+function finKey(stmt,r){ return stmt+"|"+(r.src||r.label||""); }
+function finOn(){ return !!(S.fin && S.fin.on); }
+function finCount(){ const l=(S.fin||{}).lines||{}, b=(S.fin||{}).labels||{};
+  return Object.values(l).filter(v=>v!==""&&v!==undefined&&v!==null).length
+       + Object.values(b).filter(v=>String(v||"").trim()).length; }
+function recalcTotals(rows){
+  rows.forEach(r=>{
+    if(r.type!=="tot" || r.finFixed) return;
+    const calc=(py)=>{
+      let sum=0, any=false;
+      const take=(v,k)=>{ if(!v) return; const x=py?v.py:v.cy;
+        if(x!==null&&x!==undefined){ sum+=k*x; any=true; } };
+      (r.add||[]).forEach(j=>take(rows[j],1));
+      (r.sub||[]).forEach(j=>take(rows[j],-1));
+      if(r.from!=null && r.to!=null) for(let q=r.from;q<=r.to;q++){
+        const v=rows[q]; if(!v||v.type!=="item") continue; take(v,1); }
+      return any?r2(sum):null;
+    };
+    const c=calc(0); if(c!==null) r.cy=c;
+    const p=calc(1); if(p!==null) r.py=p;
+  });
+}
+function applyFinal(m){
+  if(!finOn()) return m;
+  const ov=(S.fin.lines)||{}, lb=(S.fin.labels)||{};
+  const put=(stmt,rows)=>{
+    rows.forEach(r=>{
+      if(r.type!=="item" && r.type!=="tot") return;
+      const k=finKey(stmt,r);
+      const nl=String(lb[k]||"").trim(); if(nl) r.label=nl;
+      const c=ov[k+"|cy"], p=ov[k+"|py"];
+      if(c!==undefined && c!=="" && c!==null){ r.cy=r2(num(c)); if(r.type==="tot") r.finFixed=true; }
+      if(p!==undefined && p!=="" && p!==null){ r.py=r2(num(p)); if(r.type==="tot") r.finFixed=true; }
+    });
+  };
+  put("PL", m.plRows);
+  recalcTotals(m.plRows);
+  /* the result for the year feeds equity, so carry any change to it across */
+  const pf=m.plRows.find(r=>r.isProfit);
+  if(pf){
+    const dC=r2((pf.cy||0)-m.tot.pftC), dP=r2((pf.py||0)-(m.tot.pftP||0));
+    if(Math.abs(dC)>EPS || Math.abs(dP)>EPS){
+      const reId = S.fw==="NPO" ? "fund_unres" : "eq_re";
+      const re=m.sofpRows.find(r=>r.src===reId);
+      if(re){ re.cy=r2((re.cy||0)+dC); if(re.py!==null&&re.py!==undefined) re.py=r2(re.py+dP); }
+    }
+    m.tot.pftC=pf.cy; m.tot.pftP=pf.py;
+  }
+  put("SOFP", m.sofpRows); recalcTotals(m.sofpRows);
+  put("CF", m.cfRows);     recalcTotals(m.cfRows);
+  const ta=m.sofpRows.find(r=>/^TOTAL ASSETS$/i.test(r.label));
+  const tl=m.sofpRows.find(r=>/^TOTAL (EQUITY AND LIABILITIES|FUNDS AND LIABILITIES)$/i.test(r.label));
+  if(ta&&tl){ m.tot.assetsC=ta.cy; m.tot.assetsP=ta.py;
+    m.tot.sofpDiff=r2((ta.cy||0)-(tl.cy||0));
+    m.tot.sofpDiffP=r2((ta.py||0)-(tl.py||0)); }
+  m.finalised=true;
+  return m;
+}
+
+let curFin="SOFP";
+function renderFin(){
+  if(!S.fw || !S.tb.length){
+    $("finBody").innerHTML='<div class="card"><p class="hint">Import a trial balance first, then adjust the prepared statements here.</p></div>';
+    $("finTabs").innerHTML=""; return; }
+  S.fin=S.fin||{on:false,lines:{},labels:{}}; S.fin.lines=S.fin.lines||{}; S.fin.labels=S.fin.labels||{};
+  const f=fwDef();
+  const tabs=[["SOFP",f.sofpTitle.replace("Statement of ","")],["PL",f.plTitle.replace("Statement of ","")]];
+  if(f.stmts.includes("CF")) tabs.push(["CF","Cash flows"]);
+  tabs.push(["TAX","Income tax"]);
+  if(!tabs.some(t=>t[0]===curFin)) curFin="SOFP";
+  $("finTabs").innerHTML=tabs.map(t=>`<button data-sub="${t[0]}" aria-selected="${t[0]===curFin}">${esc(t[1])}</button>`).join("");
+  $("finTabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{curFin=b.dataset.sub;renderFin();});
+
+  const prepared=M(true);                    /* untouched */
+  const finalM=M();                          /* with your adjustments */
+  const n=finCount();
+  let h=`<div class="card" style="border-left:3px solid ${finOn()?"var(--green-2)":"var(--rule-strong)"}">
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer">
+        <input type="checkbox" id="finOn" ${finOn()?"checked":""}> Use my adjusted figures as the final statements</label>
+      <span class="chip ${n?"warn":"info"}"><span class="dot"></span>${n} adjustment${n===1?"":"s"}</span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="finGoJe">Post a journal entry instead</button>
+      <button class="btn sm" id="finRevertAll">Revert everything</button>
+    </div>
+    ${finOn() && Math.abs(finalM.tot.sofpDiff)>num(S.meta.tol) ? `
+      <div style="margin-top:12px;padding:10px 12px;border-radius:5px;background:var(--crimson-wash);color:var(--crimson);font-size:13px">
+        <strong>The statement of financial position no longer balances, by ${dispRaw(finalM.tot.sofpDiff)}.</strong>
+        A change to one line only affects one side. If the adjustment has two sides, such as an accrual or a
+        reclassification between accounts, post it as a journal entry instead and both sides move together.
+        Use these overrides for presentation: a caption, a regrouping within a total, a rounding.
+      </div>` : ""}
+    <p class="hint" style="margin:10px 0 0">${finOn()
+      ? "Exports and the statements view are showing your finalised version. Untick to go back to the prepared one at any time; nothing is lost either way."
+      : "Exports are showing the prepared version. Tick the box once you want your adjustments to be the ones issued."}</p>
+  </div>`;
+
+  if(curFin==="TAX"){
+    h+=`<div class="card"><h3>Income tax adjustments</h3>
+      <p class="hint" style="margin-bottom:14px">Disallowances, additional deductions and the loss brought forward are entered directly on the Income tax step, and they already flow through the computation. Use the rows below to override the computed figures if you need the return to agree to something else.</p>
+      <div class="btnrow"><button class="btn" id="finGoTax">Open the income tax step</button></div></div>`;
+    const c=taxComp();
+    h+=`<div class="card"><h3>Computed tax position</h3>${compHTML(c.rows)}</div>`;
+    $("finBody").innerHTML=h; wireFin(); return;
+  }
+
+  const rowsP = curFin==="SOFP"?prepared.sofpRows : curFin==="PL"?prepared.plRows : prepared.cfRows;
+  const rowsF = curFin==="SOFP"?finalM.sofpRows   : curFin==="PL"?finalM.plRows   : finalM.cfRows;
+  const showPY = S.meta.first!=="yes";
+  h+=`<div class="card" style="padding:0;overflow:hidden">
+    <div class="gwrap" style="border:0;border-radius:0;max-height:none"><table class="g">
+    <thead><tr>
+      <th style="min-width:340px">Line</th>
+      <th class="num" style="min-width:130px">Prepared ${esc(S.meta.cyLabel||"CY")}</th>
+      <th class="num" style="min-width:140px">Final ${esc(S.meta.cyLabel||"CY")}</th>
+      ${showPY?`<th class="num" style="min-width:130px">Prepared ${esc(S.meta.pyLabel||"PY")}</th>
+      <th class="num" style="min-width:140px">Final ${esc(S.meta.pyLabel||"PY")}</th>`:""}
+      <th style="width:40px"></th></tr></thead><tbody>`;
+  rowsP.forEach((r,i)=>{
+    if(r.type==="blank") return;
+    const fr=rowsF[i]||r;
+    if(r.type==="sec"||r.type==="sub"){
+      h+=`<tr><td colspan="${showPY?6:4}" style="padding:9px;font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--green-2);background:var(--surface-3)">${esc(r.label)}</td></tr>`;
+      return; }
+    const k=finKey(curFin,r), isTot=r.type==="tot";
+    const ov=S.fin.lines, lb=S.fin.labels;
+    const chg=(String(lb[k]||"").trim()||ov[k+"|cy"]||ov[k+"|py"])?true:false;
+    const cell=(suf,prep,fin)=>{
+      const v=ov[k+"|"+suf];
+      return `<td class="num" style="padding:5px 9px;font-family:var(--mono);font-size:12px;color:var(--muted)">${prep===null||prep===undefined?"":disp(prep)}</td>
+        <td><input class="num" data-fin="${esc(k+"|"+suf)}" value="${v!==undefined&&v!==""?fmtNum(num(v),2,"intl"):""}" placeholder="${prep===null||prep===undefined?"":disp(prep)}"></td>`;
+    };
+    h+=`<tr${chg?' style="background:var(--ochre-wash)"':""}>
+      <td style="min-width:340px"><input data-finlbl="${esc(k)}" value="${esc(String(lb[k]||""))}" placeholder="${esc(r.label)}" style="${isTot?"font-weight:600":""}"></td>
+      ${cell("cy", r.cy, fr.cy)}
+      ${showPY?cell("py", r.py, fr.py):""}
+      <td>${chg?`<button class="rowdel" data-finrev="${esc(k)}" title="Revert this line">&#8630;</button>`:""}</td></tr>`;
+  });
+  h+=`</tbody></table></div></div>
+    <p class="hint" style="margin-top:12px">Leave a box empty to keep the prepared figure. Change a line and the subtotals above and below it recompute, so the statement still adds up. Change the result for the year and it carries into equity.</p>`;
+  $("finBody").innerHTML=h; wireFin();
+}
+function wireFin(){
+  if($("finOn")) $("finOn").onchange=e=>{ S.fin.on=e.target.checked; persist(); renderFin(); refreshChrome(); };
+  if($("finRevertAll")) $("finRevertAll").onclick=()=>{
+    if(!confirm("Remove every adjustment and go back to the prepared statements?")) return;
+    S.fin.lines={}; S.fin.labels={}; persist(); renderFin(); toast("All adjustments removed."); };
+  if($("finGoTax")) $("finGoTax").onclick=()=>nav("tax");
+  if($("finGoJe")) $("finGoJe").onclick=()=>nav("je");
+  document.querySelectorAll("[data-fin]").forEach(el=>el.oninput=()=>{
+    const k=el.dataset.fin;
+    if(String(el.value).trim()==="") delete S.fin.lines[k]; else S.fin.lines[k]=r2(num(el.value));
+    persist(); clearTimeout(window._finT); window._finT=setTimeout(renderFin,700); });
+  document.querySelectorAll("[data-finlbl]").forEach(el=>el.oninput=()=>{
+    const k=el.dataset.finlbl;
+    if(String(el.value).trim()==="") delete S.fin.labels[k]; else S.fin.labels[k]=el.value;
+    persist(); });
+  document.querySelectorAll("[data-finrev]").forEach(b=>b.onclick=()=>{
+    const k=b.dataset.finrev;
+    delete S.fin.labels[k]; delete S.fin.lines[k+"|cy"]; delete S.fin.lines[k+"|py"];
+    persist(); renderFin(); });
 }
 </script>
 

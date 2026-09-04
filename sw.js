@@ -1,6 +1,6 @@
 /* Nepal FS Compiler - offline app shell */
 const PREFIX = "nepal-fs-";
-const CACHE = PREFIX + "a49bf655";
+const CACHE = PREFIX + "04b67144";
 const SCOPE = new URL("./", self.location).pathname;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png",
