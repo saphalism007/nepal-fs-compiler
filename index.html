@@ -592,7 +592,7 @@ body.printing #printPack{display:block}
 
 <div class="toast" id="toast" hidden></div>
 
-<script>window.__BUILD__="80eace73";</script>
+<script>window.__BUILD__="400b0197";</script>
 <script>
 "use strict";
 /* ============================================================
@@ -3221,7 +3221,57 @@ function buildSheets(){
     sheets["Financial Instruments"]=fsh;
   }
 
-  /* ---------------- 5. notes, read straight off the ledger rows ----------------
+  /* ---------------- 5. tax computation ----------------
+     Built before the notes, so the income tax note can quote this working
+     instead of repeating its figures. */
+  const c=taxComp();
+  const tx=new Sheet(TAXN,[70,18]);
+  hdrBlock(tx,"Computation of taxable income and tax liability",periodText("for"),2,"Amounts in "+ccy);
+  tx.r([cS("Particulars",ST.hdrL),cS("Amount",ST.hdrR)]); tx.freeze=tx.rows.length;
+  const taxLabelRow={};
+  const taxRowOf={}; let addFirst=null,addLast=null,lessFirst=null,lessLast=null,phase="";
+  c.rows.forEach(r=>{
+    const [t,label,v,cls]=r;
+    if(t==="sec"){ tx.r([cS(label,ST.lblB)]); phase=/^add/i.test(label)?"add":"less"; return; }
+    const isTot=t==="tot", grand=cls==="grand";
+    const rr=tx.rows.length+1;
+    let fx=null, key=null;
+    if(t==="sub2"){ if(phase==="add"){ if(addFirst===null) addFirst=rr; addLast=rr; }
+                    else { if(lessFirst===null) lessFirst=rr; lessLast=rr; } }
+    if(isTot&&/Total additions/i.test(label)) fx=addFirst?`SUM(B${addFirst}:B${addLast})`:null, key="add";
+    if(isTot&&/Total deductions/i.test(label)) fx=lessFirst?`SUM(B${lessFirst}:B${lessLast})`:null, key="less";
+    if(isTot&&/Adjusted taxable income/i.test(label)) fx=`B${taxRowOf.pbt}+B${taxRowOf.add}-B${taxRowOf.less}`, key="adj";
+    if(/^Net profit/i.test(label)) key="pbt";
+    if(/^Less: allowable donation/i.test(label)) key="don";
+    /* Every "Less" line carries a positive figure and the label does the
+       deducting, the way the computation is read. The formulas must subtract
+       those lines rather than assume they were entered as negatives. */
+    if(isTot&&/Assessable income/i.test(label)) fx=`B${taxRowOf.adj}-B${taxRowOf.don}`, key="assess";
+    if(/^Less: business loss/i.test(label)) key="loss", fx=`MIN(${IN("cfloss")},MAX(0,B${taxRowOf.assess}))`;
+    if(isTot&&/^Taxable income/i.test(label)) fx=`B${taxRowOf.assess}-B${taxRowOf.loss}`, key="taxable";
+    if(/^Income tax at/i.test(label)) fx=`MAX(0,B${taxRowOf.taxable})*${IN("taxrate")}/100`, key="taxon";
+    if(/^Less: rebate/i.test(label)) fx=IN("rebate"), key="rebate";
+    if(/^Add: fees and interest/i.test(label)) fx=IN("fees"), key="fees";
+    if(isTot&&/Total income tax liability/i.test(label))
+      fx=`B${taxRowOf.taxon}-B${taxRowOf.rebate}+B${taxRowOf.fees}`, key="totaltax";
+    if(/^Less: tax deducted/i.test(label)) fx=IN("tds"), key="tds";
+    if(/^Less: advance tax/i.test(label)) fx=IN("advance"), key="advance";
+    if(isTot&&/^Net tax payable/i.test(label))
+      fx=`B${taxRowOf.totaltax}-B${taxRowOf.tds}-B${taxRowOf.advance}`;
+    if(key) taxRowOf[key]=rr;
+    taxLabelRow[label]=rr;
+    tx.r([cS(label,isTot?(grand?ST.lblTot:ST.lblSub):ST.lblI),
+      fx?cF(fx,av(v),isTot?(grand?ST.numTot:ST.numSub):ST.num)
+        :cN(av(v),isTot?(grand?ST.numTot:ST.numSub):ST.num)]);
+  });
+  tx.blank();
+  tx.r([cS("Depreciation allowable per Schedule 2 (from the Tax Depreciation sheet)",ST.lblB),
+        cF(A1(POOLN,"$J$"+pools.totRow),av(S.pools.reduce((x,p)=>x+poolDep(p),0)),ST.numB)]);
+  tx.r([cS("Loss available to carry forward",ST.lblB),cN(av(c.lossCf),ST.numB)]);
+  tx.r([cS("Staff bonus at the rate on the Inputs sheet",ST.lblB),cN(av(c.bonus),ST.numB)]);
+  sheets[TAXN]=tx;
+
+  /* ---------------- 6. notes, read straight off the ledger rows ----------------
      Built before the statements so the face of each statement can quote the note
      rather than repeat the working: trial balance -> note -> statement. */
   const noteTotalRow={};
@@ -3264,8 +3314,14 @@ function buildSheets(){
     } else if(b.kind==="multi"){
       for(const pt of b.parts){
         nt.r([null,cS(pt.sub,ST.lblB)]);
-        if(pt.rows) pt.rows.forEach(r=>nt.r([null,cS(r.label,r.bold?ST.lblSub:ST.lblI),
-          cN(av(r.cy),r.bold?ST.numSub:ST.num)]));
+        if(pt.rows) pt.rows.forEach(r=>{
+          const tr=taxLabelRow[r.label];
+          /* the computation is kept in absolute currency, the notes in whatever
+             units the pack is presented in, so bring it across on the divisor */
+          const cell=tr ? cF(A1(TAXN,"$B$"+tr)+"/"+DIV, sv(r.cy), r.bold?ST.numSub:ST.num)
+                        : cN(sv(r.cy), r.bold?ST.numSub:ST.num);
+          nt.r([null,cS(r.label,r.bold?ST.lblSub:ST.lblI), cell]);
+        });
         else nt.r([null,cS("Set out on its own sheet of this workbook.",ST.ital)]);
       }
     }
@@ -3288,7 +3344,7 @@ function buildSheets(){
     const g = gTerm(id, py);
     return g || null;
   };
-  /* ---------------- 6. statements ---------------- */
+  /* ---------------- 7. statements ---------------- */
   function emitStmt(name,title,sub,rows,resolve){
     const nc=showPY?4:3;
     const sh=new Sheet(name, showPY?[58,7,18,18]:[58,7,18]);
@@ -3413,46 +3469,6 @@ function buildSheets(){
   }
 
 
-  /* ---------------- 7. tax computation ---------------- */
-  const c=taxComp();
-  const tx=new Sheet(TAXN,[70,18]);
-  hdrBlock(tx,"Computation of taxable income and tax liability",periodText("for"),2,"Amounts in "+ccy);
-  tx.r([cS("Particulars",ST.hdrL),cS("Amount",ST.hdrR)]); tx.freeze=tx.rows.length;
-  const taxRowOf={}; let addFirst=null,addLast=null,lessFirst=null,lessLast=null,phase="";
-  c.rows.forEach(r=>{
-    const [t,label,v,cls]=r;
-    if(t==="sec"){ tx.r([cS(label,ST.lblB)]); phase=/^add/i.test(label)?"add":"less"; return; }
-    const isTot=t==="tot", grand=cls==="grand";
-    const rr=tx.rows.length+1;
-    let fx=null, key=null;
-    if(t==="sub2"){ if(phase==="add"){ if(addFirst===null) addFirst=rr; addLast=rr; }
-                    else { if(lessFirst===null) lessFirst=rr; lessLast=rr; } }
-    if(isTot&&/Total additions/i.test(label)) fx=addFirst?`SUM(B${addFirst}:B${addLast})`:null, key="add";
-    if(isTot&&/Total deductions/i.test(label)) fx=lessFirst?`SUM(B${lessFirst}:B${lessLast})`:null, key="less";
-    if(isTot&&/Adjusted taxable income/i.test(label)) fx=`B${taxRowOf.pbt}+B${taxRowOf.add}-B${taxRowOf.less}`, key="adj";
-    if(/^Net profit/i.test(label)) key="pbt";
-    if(/^Less: allowable donation/i.test(label)) key="don";
-    if(isTot&&/Assessable income/i.test(label)) fx=`B${taxRowOf.adj}+B${taxRowOf.don}`, key="assess";
-    if(/^Less: business loss/i.test(label)) key="loss", fx=`-MIN(${IN("cfloss")},MAX(0,B${taxRowOf.assess}))`;
-    if(isTot&&/^Taxable income/i.test(label)) fx=`B${taxRowOf.assess}+B${taxRowOf.loss}`, key="taxable";
-    if(/^Income tax at/i.test(label)) fx=`MAX(0,B${taxRowOf.taxable})*${IN("taxrate")}/100`, key="taxon";
-    if(/^Less: rebate/i.test(label)) fx=`-${IN("rebate")}`;
-    if(/^Add: fees and interest/i.test(label)) fx=IN("fees");
-    if(isTot&&/Total income tax liability/i.test(label)) fx=`SUM(B${taxRowOf.taxon}:B${rr-1})`, key="totaltax";
-    if(/^Less: tax deducted/i.test(label)) fx=`-${IN("tds")}`;
-    if(/^Less: advance tax/i.test(label)) fx=`-${IN("advance")}`;
-    if(isTot&&/^Net tax payable/i.test(label)) fx=`SUM(B${taxRowOf.totaltax}:B${rr-1})`;
-    if(key) taxRowOf[key]=rr;
-    tx.r([cS(label,isTot?(grand?ST.lblTot:ST.lblSub):ST.lblI),
-      fx?cF(fx,av(v),isTot?(grand?ST.numTot:ST.numSub):ST.num)
-        :cN(av(v),isTot?(grand?ST.numTot:ST.numSub):ST.num)]);
-  });
-  tx.blank();
-  tx.r([cS("Depreciation allowable per Schedule 2 (from the Tax Depreciation sheet)",ST.lblB),
-        cF(A1(POOLN,"$J$"+pools.totRow),av(S.pools.reduce((x,p)=>x+poolDep(p),0)),ST.numB)]);
-  tx.r([cS("Loss available to carry forward",ST.lblB),cN(av(c.lossCf),ST.numB)]);
-  tx.r([cS("Staff bonus at the rate on the Inputs sheet",ST.lblB),cN(av(c.bonus),ST.numB)]);
-  sheets[TAXN]=tx;
 
   /* ---------------- 8. lead schedule and audit file ---------------- */
   const ls=new Sheet("Lead Schedule",[16,48,18,18,12]);
