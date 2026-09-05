@@ -372,6 +372,7 @@ body.printing #printPack{display:block}
           <label class="f">Cash flow method<select id="m_cfmethod"><option value="indirect">Indirect</option><option value="direct">Direct (worksheet)</option></select></label>
           <label class="f">Rounding tolerance<input id="m_tol" type="number" value="1" step="0.01"></label>
           <label class="f">Show ledger codes in the notes<select id="m_showCodes"><option value="no">No, captions only</option><option value="yes">Yes, show codes</option></select></label>
+          <label class="f">Tax not provided in the trial balance<select id="m_autoTax"><option value="yes">Bring in the computed charge</option><option value="no">Leave it out</option></select></label>
         </div>
       </div>
 
@@ -592,7 +593,7 @@ body.printing #printPack{display:block}
 
 <div class="toast" id="toast" hidden></div>
 
-<script>window.__BUILD__="400b0197";</script>
+<script>window.__BUILD__="d1cbdb0d";</script>
 <script>
 "use strict";
 /* ============================================================
@@ -1089,7 +1090,7 @@ const DEF = () => ({
   v:2, fw:"", meta:{
     entity:"", form:"Private Limited Company", regno:"", pan:"", addr:"", activity:"",
     fy:"2082/83", cyLabel:"FY 2082/83", pyLabel:"FY 2081/82", endAd:"2026-07-16", endBs:"2083.03.31",
-    first:"no", ccy:"NPR", unit:"1", dp:"2", group:"intl", plformat:"nature", cfmethod:"indirect", tol:"1", showCodes:"no",
+    first:"no", ccy:"NPR", unit:"1", dp:"2", group:"intl", plformat:"nature", cfmethod:"indirect", tol:"1", showCodes:"no", autoTax:"yes",
     taxcat:"Normal business entity - 25%", taxrate:"25", dtrate:"25", special:"no", bonus:"10", cfloss:"0",
     sig1:"", sig2:"", sig3:"", auditor:"", partner:"", approval:""
   },
@@ -1111,6 +1112,16 @@ function restore(){ try{ const raw=localStorage.getItem(LSKEY); if(!raw) return 
   S.coa=Object.assign({rules:[],captions:{}},o.coa||{}); S.learned=o.learned||{};
   S.queries=Object.assign({answered:{},dismissed:[],notes:""},o.queries||{}); S.je=o.je||[]; S.noteText=o.noteText||{}; S.fin=Object.assign({on:false,lines:{},labels:{},extra:[]},o.fin||{}); S.fin.extra=S.fin.extra||[]; return true; }catch(e){ return false; } }
 
+/* Nothing is removed on a single stray click. A row asks once; anything that
+   clears a whole set asks twice, and the second question spells out what goes. */
+function askRemove(what, detail){
+  if(!confirm("Remove "+what+"?"+(detail?"\n\n"+detail:""))) return false;
+  return true;
+}
+function askRemoveAll(what, detail){
+  if(!confirm("Remove "+what+"?"+(detail?"\n\n"+detail:""))) return false;
+  return confirm("Please confirm.\n\n"+what+" will be removed, and this cannot be undone from here.");
+}
 let toastT;
 function toast(msg, err){ const t=$("toast"); t.textContent=msg; t.className="toast"+(err?" err":""); t.hidden=false;
   clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, err?5200:2600); }
@@ -1350,7 +1361,7 @@ function refreshChrome(){
 }
 
 /* ---------- 8. SETUP FORM BINDING ---------- */
-const META_FIELDS = ["entity","form","regno","pan","addr","activity","fy","cyLabel","pyLabel","endAd","endBs","first","ccy","unit","dp","group","plformat","cfmethod","tol","showCodes","taxcat","taxrate","dtrate","special","bonus","cfloss","sig1","sig2","sig3","auditor","partner","approval"];
+const META_FIELDS = ["entity","form","regno","pan","addr","activity","fy","cyLabel","pyLabel","endAd","endBs","first","ccy","unit","dp","group","plformat","cfmethod","tol","showCodes","autoTax","taxcat","taxrate","dtrate","special","bonus","cfloss","sig1","sig2","sig3","auditor","partner","approval"];
 function syncMetaToForm(){ META_FIELDS.forEach(k=>{ const e=$("m_"+k); if(e && S.meta[k]!==undefined) e.value = S.meta[k]; }); }
 function bindSetup(){
   $("m_fy").innerHTML = FY_LIST.map(f=>`<option value="${f[0]}">${f[0]} &nbsp; (${f[1]})</option>`).join("");
@@ -1508,7 +1519,9 @@ function renderTb(){
 function tbGridEvent(e){
   const tr = e.target.closest("tr[data-id]"); if(!tr) return;
   const rec = S.tb.find(x=>x.id===tr.dataset.id); if(!rec) return;
-  if(e.target.dataset.del){ S.tb = S.tb.filter(x=>x.id!==rec.id); renderTb(); refreshChrome(); persist(); return; }
+  if(e.target.dataset.del){
+    if(!askRemove("the ledger "+(rec.name||"(unnamed)"), "Its balance leaves the statements.")) return;
+    S.tb = S.tb.filter(x=>x.id!==rec.id); renderTb(); refreshChrome(); persist(); return; }
   const k = e.target.dataset.k; if(!k) return;
   if(["dr","cr","pdr","pcr"].includes(k)) rec[k] = r2(num(e.target.value));
   else rec[k] = e.target.value;
@@ -1595,6 +1608,7 @@ document.addEventListener("click", e=>{
   if(e.target.dataset.del){
     const t=e.target.closest("table[data-tbl]"); if(!t) return;
     const spec=SCHEMA[t.dataset.tbl]; const tr=e.target.closest("tr[data-i]");
+    if(!askRemove("this line from the schedule")) return;
     spec.rows().splice(+tr.dataset.i,1); renderSch(); renderTax(); persist();
   }
 });
@@ -1613,7 +1627,9 @@ ppe:{ key:"ppe", rows:()=>S.ppe, blank:()=>({cls:"",opCost:0,add:0,disp:0,reval:
     N("opDep","Acc. depn. - opening"),N("dep","Charge for the year"),N("dispDep","On disposals"),N("imp","Impairment"),
     C("clDep","Acc. depn. - closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp), null, "G{r}+H{r}-I{r}+J{r}"),
     C("nbvC","Carrying amount - closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)), null, "F{r}-K{r}"),
-    C("nbvP","Carrying amount - opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}")] },
+    C("nbvP","Carrying amount - opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}"),
+    T("acq","Acquired on","130px"),
+    {k:"pool",label:"Income tax class",t:"select",w:"210px",opts:[["","not set"],["A","A - buildings, 5%"],["B","B - computers, furniture, office equipment, 25%"],["C","C - automobiles, 20%"],["D","D - plant and anything else, 15%"],["E","E - intangibles"]]}] },
 intan:{ key:"intan", rows:()=>S.intan, blank:()=>({cls:"",opCost:0,add:0,disp:0,reval:0,opDep:0,dep:0,dispDep:0,imp:0}),
   note:"Amortisation is presented within depreciation and amortisation expense.",
   cols:[T("cls","Class of intangible asset","230px"),
@@ -1622,7 +1638,9 @@ intan:{ key:"intan", rows:()=>S.intan, blank:()=>({cls:"",opCost:0,add:0,disp:0,
     N("opDep","Acc. amortisation - opening"),N("dep","Charge for the year"),N("dispDep","On disposals"),N("imp","Impairment"),
     C("clDep","Acc. amortisation - closing", r=>num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp), null, "G{r}+H{r}-I{r}+J{r}"),
     C("nbvC","Carrying amount - closing", r=>(num(r.opCost)+num(r.add)-num(r.disp)+num(r.reval))-(num(r.opDep)+num(r.dep)-num(r.dispDep)+num(r.imp)), null, "F{r}-K{r}"),
-    C("nbvP","Carrying amount - opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}")] },
+    C("nbvP","Carrying amount - opening", r=>num(r.opCost)-num(r.opDep), null, "B{r}-G{r}"),
+    T("acq","Acquired on","130px"),
+    {k:"pool",label:"Income tax class",t:"select",w:"210px",opts:[["","not set"],["A","A - buildings, 5%"],["B","B - computers, furniture, office equipment, 25%"],["C","C - automobiles, 20%"],["D","D - plant and anything else, 15%"],["E","E - intangibles"]]}] },
 dt:{ key:"dt", rows:()=>S.dt, blank:()=>({item:"",type:"A",carry:0,base:0,dtOp:0,toOci:0}),
   note:"Positive amounts are deferred tax liabilities; negative amounts are deferred tax assets. Rate taken from engagement setup.",
   cols:[T("item","Temporary difference","250px"),
@@ -1802,10 +1820,52 @@ function compute(){
   /* ---- performance ---- */
   const [revC,revP]=sumIn("REV"), [oiC,oiP]=sumIn("OI"), [fiC,fiP]=sumIn("FININC");
   const [cosC,cosP]=sumIn("COS"), [opxC,opxP]=sumIn("OPEX"), [finC,finP]=sumIn("FIN");
-  const [asC,asP]=sumIn("ASSOC"), [taxC,taxP]=sumIn("TAX");
+  const [asC,asP]=sumIn("ASSOC");
   const gpC=r2(revC-cosC), gpP=r2(revP-cosP);
   const opC=r2(revC+oiC-cosC-opxC), opP=r2(revP+oiP-cosP-opxP);
   const pbtC=r2(opC+fiC-finC+asC), pbtP=r2(opP+fiP-finP+asP);
+
+  /* A draft trial balance often carries no tax provision at all. Where that is so,
+     bring the charge worked out on the income tax step into the accounts, as a
+     proper double entry so the position still balances, and record where it came
+     from so the note explains itself. Anything already in the ledger is left
+     alone: the trial balance always wins over the working. */
+  const autoTax=[];
+  if(S.meta.autoTax!=="no"){
+    const post=(chargeId, balId, amt, why)=>{
+      if(Math.abs(amt)<=EPS) return;
+      const cd=CATBY[chargeId], bd=CATBY[balId];
+      if(!cd || !bd || !cd.fw.includes(fw) || !bd.fw.includes(fw)) return;
+      cy[chargeId]=r2((cy[chargeId]||0)+amt);          /* expense, debit natural */
+      cy[balId]=r2((cy[balId]||0)+amt);                /* liability, credit natural */
+      (a.ledgers[chargeId]=a.ledgers[chargeId]||[]).push({id:null,code:"",name:why,cy:amt,py:0});
+      (a.ledgers[balId]=a.ledgers[balId]||[]).push({id:null,code:"",name:why,cy:amt,py:0});
+      autoTax.push({charge:cd.label, balance:bd.label, amt:r2(amt), why});
+    };
+    if(fw!=="NPO" && Math.abs(cy.tax_cur||0)<=EPS){
+      const addT=r2((S.taxAdd||[]).reduce((x,r)=>x+num(r.amt),0));
+      const lessT=r2((S.taxLess||[]).reduce((x,r)=>x+num(r.amt),0));
+      const adjusted=r2(pbtC+addT-lessT);
+      const donAct=r2(cy.exp_donation||0);
+      const donAllow=r2(Math.max(0, Math.min(donAct, adjusted*0.05, 100000)));
+      const afterDon=r2(adjusted-donAllow);
+      const lossUsed=r2(Math.max(0, Math.min(num(S.meta.cfloss), Math.max(0, afterDon))));
+      const taxable=r2(afterDon-lossUsed);
+      post("tax_cur","cl_ctax", r2(Math.max(0,taxable)*num(S.meta.taxrate)/100),
+        "Per the income tax computation");
+    }
+    if(f.deferredTax && Math.abs(cy.tax_def||0)<=EPS){
+      const mv=r2((S.dt||[]).reduce((x,r)=>{
+        const tp = r.type==="L" ? num(r.base)-num(r.carry)
+                 : r.type==="X" ? -(num(r.carry)-num(r.base))
+                 : num(r.carry)-num(r.base);
+        return x + (tp*num(S.meta.dtrate)/100 - num(r.dtOp) - num(r.toOci));
+      },0));
+      post("tax_def", mv>=0?"ncl_dtl":"nca_dta", mv, "Per the deferred tax schedule");
+    }
+  }
+
+  const [taxC,taxP]=sumIn("TAX");
   const pftC=r2(pbtC-taxC), pftP=r2(pbtP-taxP);
   const [ocinrC,ocinrP]=sumIn("OCINR"), [ocirC,ocirP]=sumIn("OCIR");
   const ociC=f.oci?r2(ocinrC+ocirC):0, ociP=f.oci?r2(ocinrP+ocirP):0;
@@ -2082,7 +2142,7 @@ function compute(){
   if(f.deferredTax) checks.push({ok:Math.abs(r2(S.dt.reduce((s,r)=>{const tp=r.type==="L"?num(r.base)-num(r.carry):r.type==="X"?-(num(r.carry)-num(r.base)):num(r.carry)-num(r.base); return s+tp*num(S.meta.dtrate)/100;},0)-((cy.ncl_dtl||0)-(cy.nca_dta||0))))<=num(S.meta.tol),
     label:"Deferred tax schedule agrees to the ledger", detail:"Schedule "+dispRaw(S.dt.reduce((s,r)=>{const tp=r.type==="L"?num(r.base)-num(r.carry):r.type==="X"?-(num(r.carry)-num(r.base)):num(r.carry)-num(r.base); return s+tp*num(S.meta.dtrate)/100;},0))+" vs ledger "+dispRaw((cy.ncl_dtl||0)-(cy.nca_dta||0))});
 
-  return {a,f,fw,cy,py,notes,noteOf,sofpRows,plRows,cfRows,soce,checks,
+  return {a,f,fw,cy,py,notes,noteOf,sofpRows,plRows,cfRows,soce,checks,autoTax,
     tot:{revC,revP,gpC,gpP,opC,opP,pbtC,pbtP,pftC,pftP,ociC,ociP,tciC,tciP,taxC,taxP,
          ncaC,ncaP,caC,caP,eqTotC,eqTotP,nclC,nclP,clC,clP,cashC,cashP,
          assetsC:r2(ncaC+caC),assetsP:r2(ncaP+caP),sofpDiff,sofpDiffP,cfDiff,
@@ -2650,6 +2710,9 @@ function renderFs(){
     h = `<div class="sheet">${sheetHead(f.sofpTitle, periodText("at"))}
       <div class="sheet-units">${esc(unitNote())}</div>
       ${rowsHTML(m.sofpRows, showPY)}
+      ${(m.autoTax||[]).length?`<p class="hint" style="margin-top:14px;padding:10px 12px;border-radius:5px;background:var(--ochre-wash);color:var(--ochre)">
+        The trial balance carried no provision for ${esc((m.autoTax||[]).map(x=>x.charge.toLowerCase()).join(" or "))}, so the amount worked out on the income tax step has been brought in: ${
+        (m.autoTax||[]).map(x=>esc(x.charge)+" "+dispRaw(x.amt)+" against "+esc(x.balance)).join("; ")}. Turn this off on the setup step if the accounts are meant to carry no tax.</p>`:""}
       ${Math.abs(m.tot.sofpDiff)>num(S.meta.tol)?`<p class="hint" style="color:var(--crimson);margin-top:14px">The statement does not balance by ${dispRaw(m.tot.sofpDiff)}. Check the trial balance and the mapping before issuing.</p>`:""}
       ${sigBlock()}</div>`;
   } else if(curFsView==="PL"){
@@ -2719,11 +2782,14 @@ function renderFs(){
   };
   document.querySelectorAll("[data-cfdel]").forEach(b=>b.onclick=()=>{
     const lab=b.dataset.cfdel;
+    if(!askRemove("the line \""+lab+"\"")) return;
     S.cf.other=(S.cf.other||[]).filter(x=>String(x.label||"").trim()!==lab);
     if(S.cf.pyMap) delete S.cf.pyMap[lab];
     persist(); renderFs(); toast("Line removed.");
   });
-  if($("btnCfPyClear")) $("btnCfPyClear").onclick=()=>{ S.cf.pyMap={}; persist(); renderFs(); toast("Comparative figures cleared."); };
+  if($("btnCfPyClear")) $("btnCfPyClear").onclick=()=>{
+    if(!askRemoveAll("every comparative figure you have entered")) return;
+    S.cf.pyMap={}; persist(); renderFs(); toast("Comparative figures cleared."); };
   if($("btnCfPy")) $("btnCfPy").onclick=()=>{
     if(!S.cf.editPY && !Object.keys(S.cf.pyMap||{}).length){
       S.cf.pyMap={}; M().cfRows.forEach(r=>{ if(!r.label||r.type==="sec"||r.type==="sub"||r.type==="blank") return;
@@ -4829,7 +4895,10 @@ function renderJe(){
   const re_=()=>{ persist(); renderJe(); refreshChrome(); };
   $("btnJeNew").onclick=()=>{ S.je.push({narration:"",ref:"AJE-"+(S.je.length+1),on:true,
     lines:[{row:"",dr:0,cr:0},{row:"",dr:0,cr:0}]}); re_(); };
-  document.querySelectorAll("[data-jedel]").forEach(b=>b.onclick=()=>{ S.je.splice(+b.dataset.jedel,1); re_(); });
+  document.querySelectorAll("[data-jedel]").forEach(b=>b.onclick=()=>{
+    const e=S.je[+b.dataset.jedel]||{};
+    if(!askRemoveAll("journal entry "+(e.ref||(+b.dataset.jedel+1)), e.narration||"")) return;
+    S.je.splice(+b.dataset.jedel,1); re_(); });
   document.querySelectorAll("[data-jeadd]").forEach(b=>b.onclick=()=>{ S.je[+b.dataset.jeadd].lines.push({row:"",dr:0,cr:0}); re_(); });
   document.querySelectorAll("[data-jerd]").forEach(b=>b.onclick=()=>{ const [i,j]=b.dataset.jerd.split(".").map(Number);
     S.je[i].lines.splice(j,1); re_(); });
@@ -5336,7 +5405,7 @@ function renderFin(){
 function wireFin(){
   if($("finOn")) $("finOn").onchange=e=>{ S.fin.on=e.target.checked; persist(); renderFin(); refreshChrome(); };
   if($("finRevertAll")) $("finRevertAll").onclick=()=>{
-    if(!confirm("Remove every adjustment and go back to the prepared statements?")) return;
+    if(!askRemoveAll("every adjustment","The statements go back to the prepared figures.")) return;
     S.fin.lines={}; S.fin.labels={}; persist(); renderFin(); toast("All adjustments removed."); };
   if($("finGoTax")) $("finGoTax").onclick=()=>nav("tax");
   if($("finGoJe")) $("finGoJe").onclick=()=>nav("je");
@@ -5363,6 +5432,8 @@ function wireFin(){
     persist(); renderFin(); refreshChrome();
   };
   document.querySelectorAll("[data-exdel]").forEach(b=>b.onclick=()=>{
+    const x=S.fin.extra[+b.dataset.exdel]||{};
+    if(!askRemove("the line \""+(x.label||"")+"\"")) return;
     S.fin.extra.splice(+b.dataset.exdel,1); persist(); renderFin(); toast("Line removed."); });
   document.querySelectorAll("[data-finrev]").forEach(b=>b.onclick=()=>{
     const k=b.dataset.finrev;
@@ -5543,9 +5614,9 @@ function init(){
   $("btnCsv").onclick = ()=> $("fileCsv").click();
   $("fileCsv").onchange = e=>{ const f=e.target.files[0]; if(!f) return;
     const fr=new FileReader(); fr.onload=()=>importTB(fr.result,false); fr.readAsText(f); e.target.value=""; };
-  $("btnDemo").onclick = ()=>{ if(S.tb.length && !confirm("Replace the current engagement with the worked example?")) return; loadDemo(); };
+  $("btnDemo").onclick = ()=>{ if(S.tb.length && !askRemoveAll("this engagement","It is replaced by the worked example.")) return; loadDemo(); };
   $("btnAddRow").onclick = ()=>{ S.tb.push({id:uid(),code:"",name:"",dr:0,cr:0,pdr:0,pcr:0,map:""}); renderTb(); persist(); };
-  $("btnClearTb").onclick = ()=>{ if(!confirm("Delete all "+S.tb.length+" ledgers?")) return; S.tb=[]; renderTb(); refreshChrome(); persist(); };
+  $("btnClearTb").onclick = ()=>{ if(!askRemoveAll("all "+S.tb.length+" ledgers","The whole trial balance and its mapping go.")) return; S.tb=[]; renderTb(); refreshChrome(); persist(); };
   $("btnAutoMap").onclick = ()=>{ let n=0; S.tb.forEach(r=>{ if(!r.map){ r.map=autoMapOne(r.name,S.fw); if(r.map) n++; } });
     renderTb(); refreshChrome(); persist(); toast(n?n+" ledgers mapped automatically.":"Nothing further could be mapped automatically - set the remaining lines by hand."); };
   $("btnOnlyUnmapped").onclick = ()=>{ onlyUnmapped=!onlyUnmapped; $("btnOnlyUnmapped").textContent = onlyUnmapped?"Show all ledgers":"Show unmapped only"; renderTb(); };
