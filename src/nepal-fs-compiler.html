@@ -265,7 +265,15 @@ body.printing #printPack{display:block}
   #printPack .sheet:last-child{page-break-after:auto}
   .scrollx{overflow:visible!important}
   table.fs{min-width:0!important}
-  .rail,.topbar,.docbar,.pane-head,.subtabs{display:none!important}
+  /* Nothing that belongs to the software may reach the paper. Only the statements. */
+  .rail,.topbar,.docbar,.pane-head,.subtabs,.kpis,.step-sep{display:none!important}
+  .btnrow,button,.rowdel,.chip{display:none!important}
+  .sheet .hint,.pane > .hint{display:none!important}
+  /* A field still holding a figure prints as the figure, not as a box */
+  input,select,textarea{border:0!important;background:transparent!important;box-shadow:none!important;
+    padding:0!important;-webkit-appearance:none!important;appearance:none!important;color:inherit!important}
+  table.fs input.num{text-align:right!important;width:auto!important;font-family:inherit!important;font-size:inherit!important}
+  @page{size:A4;margin:14mm}
   body{background:#fff}
   .sheet{box-shadow:none;border:0;max-width:none;padding:0;page-break-after:always}
   .app{display:block}
@@ -472,7 +480,7 @@ body.printing #printPack{display:block}
       <div class="docbar">
         <div class="seg" id="fsSeg"></div>
         <span class="spacer"></span>
-        <button class="btn" onclick="window.print()">Print / PDF</button>
+        <button class="btn" id="btnPrintFs">Print / PDF</button>
       </div>
       <div id="fsBody"></div>
     </section>
@@ -2772,6 +2780,9 @@ function renderFs(){
     if(S.cf.pyMap) delete S.cf.pyMap[lab];
     persist(); renderFs(); toast("Line removed.");
   });
+  if($("btnPrintFs")) $("btnPrintFs").onclick=()=>{
+    if(leaveEditModesForPrint()) setTimeout(()=>window.print(), 120); else window.print();
+  };
   if($("btnCfPyClear")) $("btnCfPyClear").onclick=()=>{
     if(!askRemoveAll("every comparative figure you have entered")) return;
     S.cf.pyMap={}; persist(); renderFs(); toast("Comparative figures cleared."); };
@@ -5561,6 +5572,18 @@ function loadEngagement(file){
   }catch(e){ toast("Could not open the file: "+e.message, true); } };
   fr.readAsText(file);
 }
+
+/* Printing must not catch the app mid edit: a note being rewritten would go to
+   paper as a text box, and the comparative column as empty fields. Close every
+   editing mode first, whether Print was clicked or the keyboard shortcut used. */
+function leaveEditModesForPrint(){
+  let changed=false;
+  if(S.cf && S.cf.editPY){ S.cf.editPY=false; changed=true; }
+  if(S.cf && S.cf.editNotes){ S.cf.editNotes=false; changed=true; }
+  if(changed && typeof renderFs==="function" && curStep==="fs") renderFs();
+  return changed;
+}
+addEventListener("beforeprint", leaveEditModesForPrint);
 
 /* ---------- 23. INITIALISATION ---------- */
 function init(){
