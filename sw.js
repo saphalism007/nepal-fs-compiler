@@ -33,11 +33,38 @@ self.addEventListener("fetch", e => {
   const isFont = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (!inScope && !isFont) return;
 
-  /* The app itself is fetched from the network first, so a correction reaches
-     people the next time they open it rather than waiting for a cache to expire.
-     The cached copy is kept up to date behind that and answers when offline.
-     Fonts and icons rarely change and are served from the cache first. */
-  const isApp = inScope && (req.mode === "navigate" || /\/(index\.html)?$/.test(url.pathname));
+  /* Opening the app is answered from the copy saved on this device, at once,
+     and a fresh copy is fetched behind it for next time. It used to be fetched
+     from GitHub first on every opening, about 360 KB, which on a phone is a
+     wait of seconds every time and longer on a weak signal.
+
+     A correction still reaches people promptly: section 30 of the page asks
+     the server for the page directly, a few moments after opening, and
+     reloads once if a newer build is there. That request is not an opening,
+     so it is not answered from here; it goes to the network below, as it
+     always did. */
+  if (inScope && req.mode === "navigate") {
+    const fresh = fetch(req, { cache: "no-store" }).then(resp => {
+      if (resp && resp.ok) {
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => { c.put("./index.html", copy.clone()); c.put("./", copy); }).catch(() => {});
+      }
+      return resp;
+    });
+    e.respondWith(
+      caches.match("./index.html").then(hit => hit || caches.match("./")).then(saved => {
+        if (saved) { e.waitUntil(fresh.catch(() => {})); return saved; }
+        return fresh.catch(() => Response.error());
+      })
+    );
+    return;
+  }
+
+  /* The page asked for by its own correction check, and anything else that is
+     the app itself, comes from the network first and falls back to the saved
+     copy offline. Fonts and icons rarely change and are served from the cache
+     first. */
+  const isApp = inScope && /\/(index\.html)?$/.test(url.pathname);
   if (isApp) {
     e.respondWith(
       fetch(req, { cache: "no-store" })
